@@ -277,6 +277,12 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
       // failure (network, permissions, no thread support) is logged and
       // skipped so role assignment below still runs.
       if (sentMessage && horoscopeEnabled()) {
+        // All rows in this batch are people whose birthday is "today" for
+        // this region, so they share the same month/day. Pull from the
+        // first row — `month`/`day` are NOT in scope here (they live in
+        // runDailyJob), which used to throw a silent ReferenceError and
+        // suppress the entire thread + horoscope path.
+        const { month, day } = announceable[0];
         const sign = zodiacFor(month, day);
         if (sign) {
           try {

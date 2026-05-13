@@ -20,6 +20,7 @@ import { isAdmin } from './utils/permissions.js';
 import { logger } from './logger.js';
 import { buildDebugPanel, buildDebugState } from './debug.js';
 import { REGIONS, isValidRegion, regionLabel, regionFromLocale } from './regions.js';
+import { runDailyJob } from './scheduler.js';
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
