@@ -60,6 +60,34 @@ export const CID = {
   },
 };
 
+// ---------- Setup-pending notice ----------
+// Posted in the freshly-created Birthday Club channel when the server has
+// not yet configured an announcement channel. We deliberately do NOT post
+// the user-facing collection panel until admins finish setup, otherwise
+// users save birthdays that have nowhere to be announced.
+//
+// The footer string is a stable marker so post-config code can find and
+// delete this notice to replace it with the real panel.
+export const SETUP_PENDING_MARKER = 'orbitday:setup-pending:v1';
+
+export function buildSetupPendingMessage() {
+  const embed = new EmbedBuilder()
+    .setTitle('🎂 Birthday Club — setup required')
+    .setDescription(
+      [
+        'Thanks for adding OrbitDay! This channel will host the public birthday panel once setup is complete.',
+        '',
+        '**Admins:** run `/birthday-config` and set, at minimum, the **Announcement channel** (where birthday shoutouts will be posted). The public panel will appear here automatically once that\'s saved.',
+        '',
+        '_You can also configure a Birthday role, audit channel, and alert channel from the same panel._',
+      ].join('\n')
+    )
+    .setColor(0xffc857)
+    .setFooter({ text: SETUP_PENDING_MARKER });
+
+  return { embeds: [embed], components: [] };
+}
+
 // ---------- Public panel ----------
 
 export function buildPanelMessage() {

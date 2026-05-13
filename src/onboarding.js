@@ -1,5 +1,5 @@
 import { ChannelType, PermissionFlagsBits } from 'discord.js';
-import { buildPanelMessage } from './ui.js';
+import { buildPanelMessage, buildSetupPendingMessage, SETUP_PENDING_MARKER } from './ui.js';
 import { getGuildSettings, updateGuildSettings } from './db.js';
 import { logger } from './logger.js';
 
@@ -296,18 +296,28 @@ async function _ensureBirthdayClubChannel(guild) {
       }
     }
 
-    // 4. Post the panel ONLY if we just created the channel (or the channel
-    //    has no messages yet). Otherwise reusing an existing channel would
-    //    spam a fresh panel every bot restart.
-    let shouldPostPanel = created;
-    if (!shouldPostPanel) {
+    // 4. Post a message in the channel. Two possible messages:
+    //    - If announcement_channel_id is NOT yet configured, post a
+    //      setup-pending admin notice (no interactive buttons). Posting
+    //      the real collection panel here would let users save birthdays
+    //      that have nowhere to be announced.
+    //    - Once announcement_channel_id IS configured, post the real
+    //      panel (this path runs again after /birthday-config saves).
+    //    Either message counts as "already posted" — we never spam on
+    //    restart.
+    const isConfigured = Boolean(settings?.announcement_channel_id);
+    let shouldPost = created;
+    if (!shouldPost) {
       try {
         const recent = await channel.messages.fetch({ limit: 50 });
         const selfId = guild.client.user.id;
-        const alreadyPosted = recent.some(
-          (m) => m.author?.id === selfId && Array.isArray(m.components) && m.components.length > 0
-        );
-        shouldPostPanel = !alreadyPosted;
+        const alreadyPosted = recent.some((m) => {
+          if (m.author?.id !== selfId) return false;
+          const hasComponents = Array.isArray(m.components) && m.components.length > 0;
+          const isSetupPending = m.embeds?.some((e) => e?.footer?.text === SETUP_PENDING_MARKER);
+          return hasComponents || isSetupPending;
+        });
+        shouldPost = !alreadyPosted;
       } catch (err) {
         logger.error('Failed to check existing panel messages', {
           guild_id: guild.id,
@@ -315,7 +325,7 @@ async function _ensureBirthdayClubChannel(guild) {
           error: err,
         });
         // Be conservative — don't re-post if we can't tell.
-        shouldPostPanel = false;
+        shouldPost = false;
       }
     }
     // Make sure the bot can post here — adds a self-overwrite if a pre-existing
@@ -323,13 +333,19 @@ async function _ensureBirthdayClubChannel(guild) {
     // freshly created channels because we already set the overwrite at create.
     await ensureBotCanPost(channel).catch(() => {});
 
-    if (shouldPostPanel) {
+    if (shouldPost) {
       try {
-        await channel.send(buildPanelMessage());
-      } catch (err) {
-        logger.error('Failed to post panel in Birthday Club channel', {
+        const payload = isConfigured ? buildPanelMessage() : buildSetupPendingMessage();
+        await channel.send(payload);
+        logger.info(isConfigured ? 'birthday_panel_posted' : 'birthday_setup_notice_posted', {
           guild_id: guild.id,
           channel_id: channel.id,
+        });
+      } catch (err) {
+        logger.error('Failed to post message in Birthday Club channel', {
+          guild_id: guild.id,
+          channel_id: channel.id,
+          configured: isConfigured,
           error: err,
         });
         // still persist so admins know which channel was chosen
@@ -341,6 +357,54 @@ async function _ensureBirthdayClubChannel(guild) {
   } catch (err) {
     logger.error('ensureBirthdayClubChannel failed', { guild_id: guild.id, error: err });
     return null;
+  }
+}
+
+// Called from /birthday-config after the announcement channel is saved.
+// Finds the setup-pending notice in the collection channel and replaces it
+// with the real birthday panel. Idempotent: if a real panel is already
+// posted, does nothing; if no setup-pending notice exists, just posts the
+// panel.
+export async function promoteSetupPendingToPanel(guild) {
+  try {
+    const settings = await getGuildSettings(guild.id);
+    if (!settings?.announcement_channel_id) return; // not actually configured
+    if (!settings?.collection_channel_id) return; // nothing to upgrade
+    const channel =
+      guild.channels.cache.get(settings.collection_channel_id) ??
+      (await guild.channels.fetch(settings.collection_channel_id).catch(() => null));
+    if (!channel) return;
+
+    const recent = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+    if (!recent) return;
+    const selfId = guild.client.user.id;
+    const realPanel = recent.find(
+      (m) => m.author?.id === selfId && Array.isArray(m.components) && m.components.length > 0
+    );
+    if (realPanel) return; // already promoted
+
+    const pending = recent.find(
+      (m) =>
+        m.author?.id === selfId &&
+        m.embeds?.some((e) => e?.footer?.text === SETUP_PENDING_MARKER)
+    );
+    if (pending) {
+      await pending.delete().catch((err) =>
+        logger.error('Failed to delete setup-pending notice', {
+          guild_id: guild.id,
+          channel_id: channel.id,
+          error: err,
+        })
+      );
+    }
+    await channel.send(buildPanelMessage());
+    logger.info('birthday_panel_promoted', {
+      guild_id: guild.id,
+      channel_id: channel.id,
+      replaced_pending: Boolean(pending),
+    });
+  } catch (err) {
+    logger.error('promoteSetupPendingToPanel failed', { guild_id: guild.id, error: err });
   }
 }
 

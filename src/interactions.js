@@ -13,7 +13,7 @@ import { isValidRegion, regionLabel, regionFromLocale } from './regions.js';
 import { logger } from './logger.js';
 import { handleDebugButton, reportToErrorChannel } from './debug.js';
 import { isAdmin } from './utils/permissions.js';
-import { ensureBotPermsOnConfiguredChannels } from './onboarding.js';
+import { ensureBotPermsOnConfiguredChannels, promoteSetupPendingToPanel } from './onboarding.js';
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
@@ -184,7 +184,15 @@ async function handleConfig(interaction) {
     // Self-heal: grant the bot any missing perms on the newly-selected channel.
     ensureBotPermsOnConfiguredChannels(interaction.guild).catch(() => {});
     if (id === CID.cfg.chCollection) return saveAndRefresh({ collection_channel_id: channelId });
-    if (id === CID.cfg.chAnnouncement) return saveAndRefresh({ announcement_channel_id: channelId });
+    if (id === CID.cfg.chAnnouncement) {
+      await updateGuildSettings(guildId, { announcement_channel_id: channelId });
+      // Setting an announcement channel completes the minimum config — if a
+      // setup-pending notice is sitting in the collection channel, replace it
+      // with the real birthday panel now.
+      promoteSetupPendingToPanel(interaction.guild).catch(() => {});
+      const settings = await getGuildSettings(guildId);
+      return interaction.update(buildConfigPanel(settings));
+    }
     if (id === CID.cfg.chAudit) {
       await updateGuildSettings(guildId, { audit_channel_id: channelId });
       await ensureBotPermsOnConfiguredChannels(interaction.guild).catch(() => {});
