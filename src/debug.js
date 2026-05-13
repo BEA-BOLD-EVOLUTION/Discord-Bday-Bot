@@ -1,4 +1,4 @@
-import { MessageFlags, PermissionFlagsBits } from 'discord.js';
+import { EmbedBuilder, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import {
   getGuildSettings,
   countBirthdaysForGuild,
@@ -14,7 +14,25 @@ import {
 } from './scheduler.js';
 import { CID, buildDebugPanel, buildPanelMessage } from './ui.js';
 import { todayInTimezone, formatBirthday } from './utils/dates.js';
+import { formatZodiac, zodiacFor } from './utils/zodiac.js';
+import { fetchDailyHoroscope, horoscopeEnabled, threadsEnabled } from './utils/horoscope.js';
 import { logger, getRecentErrors } from './logger.js';
+
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+// Embed accent color keyed to the zodiac element (mirrors scheduler.js).
+function elementColor(element) {
+  switch (element) {
+    case 'Fire':  return 0xff5a3c;
+    case 'Earth': return 0x7a8f3d;
+    case 'Air':   return 0x8ec5ff;
+    case 'Water': return 0x5aa2e6;
+    default:      return 0xff7ab6;
+  }
+}
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
@@ -189,9 +207,11 @@ async function onCatchUpMonth(interaction) {
     return interaction.editReply('Announcement channel is missing or inaccessible.');
   }
 
-  const lines = missed.map(
-    (r) => `• <@${r.user_id}> — ${formatBirthday(r.month, r.day)}`
-  );
+  const lines = missed.map((r) => {
+    const z = formatZodiac(r.month, r.day);
+    const base = `• <@${r.user_id}> — ${formatBirthday(r.month, r.day)}`;
+    return z ? `${base} · ${z}` : base;
+  });
   const content = [
     `🎂 **Belated Happy Birthday!**`,
     `_We missed these earlier this month — sending love now:_`,
@@ -199,8 +219,9 @@ async function onCatchUpMonth(interaction) {
     ...lines,
   ].join('\n');
 
+  let sentMessage = null;
   try {
-    await channel.send({
+    sentMessage = await channel.send({
       content,
       // Ping the honorees so they actually see it.
       allowedMentions: { users: missed.map((r) => r.user_id) },
@@ -209,6 +230,67 @@ async function onCatchUpMonth(interaction) {
     logger.error('Catch-up announcement send failed', { guild_id: interaction.guildId, error: err });
     await reportToErrorChannel(interaction, 'Catch-up announcement failed', 'error', err);
     return interaction.editReply('Failed to post the catch-up message. See the error log channel.');
+  }
+
+  // Horoscope embeds — one per unique zodiac sign across the missed batch,
+  // posted in a thread off the belated message (or inline if threads are
+  // disabled / unsupported). Best-effort; failures are logged and skipped.
+  if (sentMessage && horoscopeEnabled()) {
+    // Group missed birthdays by zodiac sign id so each sign gets exactly
+    // one horoscope embed, listing whose belated birthday it covers.
+    const bySign = new Map();
+    for (const r of missed) {
+      const sign = zodiacFor(r.month, r.day);
+      if (!sign) continue;
+      if (!bySign.has(sign.id)) bySign.set(sign.id, { sign, members: [] });
+      bySign.get(sign.id).members.push(r);
+    }
+
+    if (bySign.size > 0) {
+      let target = channel;
+      if (threadsEnabled() && typeof sentMessage.startThread === 'function') {
+        const thread = await sentMessage
+          .startThread({
+            name: `🔮 Belated Horoscopes · ${MONTH_NAMES[month - 1]}`,
+            autoArchiveDuration: 1440,
+            reason: 'OrbitDay belated horoscope thread',
+          })
+          .catch((err) => {
+            logger.warn('Failed to create catch-up horoscope thread; falling back to channel', {
+              guild_id: interaction.guildId,
+              error: err,
+            });
+            return null;
+          });
+        if (thread) target = thread;
+      }
+
+      for (const { sign, members } of bySign.values()) {
+        try {
+          const text = await fetchDailyHoroscope(sign.id, todayIso);
+          if (!text) continue;
+          const who = members
+            .map((m) => `<@${m.user_id}> (${formatBirthday(m.month, m.day)})`)
+            .join(', ');
+          const embed = new EmbedBuilder()
+            .setTitle(`${sign.emoji} Today's ${sign.name} Horoscope`)
+            .setDescription(text.length > 4000 ? `${text.slice(0, 3997)}…` : text)
+            .addFields({ name: 'For', value: who.slice(0, 1024) })
+            .setFooter({ text: `OrbitDay · The Cosmic Birthday Bot · ${sign.element}` })
+            .setColor(elementColor(sign.element));
+          await target.send({
+            embeds: [embed],
+            allowedMentions: { users: members.map((m) => m.user_id) },
+          });
+        } catch (err) {
+          logger.warn('Failed to send catch-up horoscope embed', {
+            guild_id: interaction.guildId,
+            sign: sign.id,
+            error: err,
+          });
+        }
+      }
+    }
   }
 
   await reportToErrorChannel(
