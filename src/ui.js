@@ -87,10 +87,13 @@ export function buildMonthSelect(mode = 'add') {
 export function buildDaySelect(month, mode = 'add') {
   const m = Number(month);
   const max = daysInMonth(m);
-  // Discord limits selects to 25 options, so chunk days into multiple selects.
+  // Split days into two balanced dropdowns: 1–15 and 16–end. Discord caps
+  // selects at 25 options, so we can't show all 31 in one — splitting evenly
+  // looks cleaner than 25 + a tiny overflow.
   const all = Array.from({ length: max }, (_, i) => ({ label: String(i + 1), value: String(i + 1) }));
+  const CHUNK = 15;
   const chunks = [];
-  for (let i = 0; i < all.length; i += 25) chunks.push(all.slice(i, i + 25));
+  for (let i = 0; i < all.length; i += CHUNK) chunks.push(all.slice(i, i + CHUNK));
 
   const components = chunks.map((chunk, idx) => {
     const first = chunk[0].value;
