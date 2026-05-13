@@ -41,11 +41,23 @@ async function ensureBotCanPost(channel, required = REQUIRED_BOT_CHANNEL_PERMS) 
   const missing = required.filter((p) => !current?.has(p));
   if (missing.length === 0) return { ok: true, channel };
 
-  // Effective channel-level Manage Channels — accounts for overwrites and
-  // category inheritance. Server-wide Manage Channels alone is not enough.
-  const canManage = current?.has(PermissionFlagsBits.ManageChannels);
-  if (!canManage) {
-    return { ok: false, reason: 'no_manage', missing, channel };
+  // Discord requires Manage Roles on the channel to edit permission
+  // overwrites (NOT Manage Channels — that controls renaming/topic/etc).
+  // Plus the API enforces "you can only grant permissions you yourself
+  // have" so we also need every perm we're trying to add.
+  const canManage = current?.has(PermissionFlagsBits.ManageRoles);
+  const canGrantEachMissing = missing.every((p) => current?.has(p));
+  if (!canManage || !canGrantEachMissing) {
+    logger.warn('channel_perms_self_heal_blocked', {
+      guild_id: channel.guild.id,
+      channel_id: channel.id,
+      channel_name: channel.name,
+      has_manage_roles: !!canManage,
+      missing: missing.map(permLabel),
+      bot_effective_perms_bitfield: current?.bitfield?.toString(),
+      bot_role_perms_bitfield: me.permissions?.bitfield?.toString(),
+    });
+    return { ok: false, reason: canManage ? 'cant_grant_unheld' : 'no_manage_roles', missing, channel };
   }
   try {
     await channel.permissionOverwrites.edit(

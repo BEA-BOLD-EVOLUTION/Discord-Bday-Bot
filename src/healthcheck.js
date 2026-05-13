@@ -56,6 +56,34 @@ export async function runStartupHealthCheck(client) {
   // ---- Per-guild channels & role checks ----
   for (const [guildId, guild] of client.guilds.cache) {
     try {
+      // One-shot diagnostic: dump exactly what perms our role actually has,
+      // so we can stop theorizing about "Manage Roles vs Manage Channels".
+      const me = guild.members.me;
+      if (me) {
+        const perms = me.permissions;
+        const friendly = Object.entries({
+          Administrator: 1n << 3n,
+          ManageGuild: 1n << 5n,
+          ManageRoles: 1n << 28n,
+          ManageChannels: 1n << 4n,
+          ViewChannel: 1n << 10n,
+          SendMessages: 1n << 11n,
+          EmbedLinks: 1n << 14n,
+          ReadMessageHistory: 1n << 16n,
+          CreatePublicThreads: 1n << 34n,
+          SendMessagesInThreads: 1n << 38n,
+        })
+          .filter(([, bit]) => (perms.bitfield & bit) === bit)
+          .map(([name]) => name);
+        logger.info('bot_role_perms_dump', {
+          guild_id: guildId,
+          bitfield: perms.bitfield.toString(),
+          has: friendly,
+          highest_role: me.roles.highest?.name,
+          highest_role_position: me.roles.highest?.position,
+        });
+      }
+
       const settings = await getGuildSettings(guildId);
       if (!settings) {
         logger.warn('guild_unconfigured', { guild_id: guildId, name: guild.name });
