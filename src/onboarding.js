@@ -36,17 +36,16 @@ const REQUIRED_BOT_LOG_PERMS = [
 // gracefully.
 async function ensureBotCanPost(channel, required = REQUIRED_BOT_CHANNEL_PERMS) {
   const me = channel.guild.members.me;
-  if (!me) return false;
+  if (!me) return { ok: false, reason: 'no_member', channel };
   const current = channel.permissionsFor(me);
-  if (current && required.every((p) => current.has(p))) {
-    return true;
-  }
-  if (!me.permissions.has(PermissionFlagsBits.ManageChannels)) {
-    logger.warn('Bot lacks Manage Channels; cannot self-grant channel perms', {
-      guild_id: channel.guild.id,
-      channel_id: channel.id,
-    });
-    return false;
+  const missing = required.filter((p) => !current?.has(p));
+  if (missing.length === 0) return { ok: true, channel };
+
+  // Effective channel-level Manage Channels — accounts for overwrites and
+  // category inheritance. Server-wide Manage Channels alone is not enough.
+  const canManage = current?.has(PermissionFlagsBits.ManageChannels);
+  if (!canManage) {
+    return { ok: false, reason: 'no_manage', missing, channel };
   }
   try {
     await channel.permissionOverwrites.edit(
@@ -57,39 +56,104 @@ async function ensureBotCanPost(channel, required = REQUIRED_BOT_CHANNEL_PERMS) 
     logger.info('channel_perms_granted', {
       guild_id: channel.guild.id,
       channel_id: channel.id,
+      granted: required.map((p) => permLabel(p)),
     });
-    return true;
+    return { ok: true, channel };
   } catch (err) {
-    logger.warn('Failed to self-grant channel perms', {
-      guild_id: channel.guild.id,
-      channel_id: channel.id,
-      error: err,
+    return {
+      ok: false,
+      reason: err?.code === 50001 ? 'no_view' : 'api_error',
+      code: err?.code,
+      missing,
+      channel,
+    };
+  }
+}
+
+const PERM_LABELS = {
+  [PermissionFlagsBits.ViewChannel]: 'View Channel',
+  [PermissionFlagsBits.SendMessages]: 'Send Messages',
+  [PermissionFlagsBits.EmbedLinks]: 'Embed Links',
+  [PermissionFlagsBits.ReadMessageHistory]: 'Read Message History',
+  [PermissionFlagsBits.CreatePublicThreads]: 'Create Public Threads',
+  [PermissionFlagsBits.SendMessagesInThreads]: 'Send Messages in Threads',
+  [PermissionFlagsBits.ManageChannels]: 'Manage Channels',
+};
+function permLabel(p) {
+  return PERM_LABELS[p] || String(p);
+}
+
+// In-process cache so we DM the owner at most once per process per guild.
+const ownerNotified = new Set();
+async function notifyOwnerOfPermIssues(guild, problems) {
+  if (ownerNotified.has(guild.id)) return;
+  ownerNotified.add(guild.id);
+  try {
+    const owner = await guild.fetchOwner().catch(() => null);
+    if (!owner) return;
+    const lines = problems.map((p) => {
+      const chRef = p.channel?.id ? `<#${p.channel.id}>` : '(missing channel)';
+      const missing = (p.missing || []).map(permLabel).join(', ') || 'view access';
+      const why =
+        p.reason === 'no_view'
+          ? "I can't even see this channel"
+          : p.reason === 'no_manage'
+            ? "I lack Manage Channel here (a category or channel override is blocking me)"
+            : `Discord rejected my edit (code ${p.code ?? '?'})`;
+      return `• **${p.slot}** → ${chRef}\n   missing: ${missing}\n   reason: ${why}`;
     });
-    return false;
+    const msg =
+      `Hi! I'm **OrbitDay** running in **${guild.name}**. I tried to fix my own channel permissions but couldn't:\n\n` +
+      lines.join('\n\n') +
+      `\n\n**Fix:** open each channel → *Edit Channel* → *Permissions* → add my bot role and tick **View Channel**, **Send Messages**, **Embed Links**, **Read Message History** (plus **Create Public Threads** + **Send Messages in Threads** for the collection/announcement channels). Or simply give my role **Manage Channels** at the server level with no channel-level deny overrides.\n\nOnce that's done, I'll auto-heal everything else on my next restart.`;
+    await owner.send(msg).catch(() => null);
+    logger.info('owner_perm_dm_sent', { guild_id: guild.id, owner_id: owner.id, problems: problems.length });
+  } catch (err) {
+    logger.warn('owner_perm_dm_failed', { guild_id: guild.id, error: err?.message });
   }
 }
 
 // Walk every configured channel for this guild and self-grant any missing
 // perms. Called on startup back-fill and on GuildCreate so admins never
 // have to manually fix channel overrides after configuring a channel.
+// When a channel is unfixable by the bot (Discord denies us Manage Channel
+// or View), DM the guild owner with the precise repair list.
 export async function ensureBotPermsOnConfiguredChannels(guild) {
   try {
     const settings = await getGuildSettings(guild.id);
     if (!settings) return;
     const targets = [
-      [settings.collection_channel_id, REQUIRED_BOT_CHANNEL_PERMS],
-      [settings.announcement_channel_id, REQUIRED_BOT_CHANNEL_PERMS],
-      [settings.audit_channel_id, REQUIRED_BOT_LOG_PERMS],
-      [settings.error_log_channel_id, REQUIRED_BOT_LOG_PERMS],
+      [settings.collection_channel_id, REQUIRED_BOT_CHANNEL_PERMS, 'collection'],
+      [settings.announcement_channel_id, REQUIRED_BOT_CHANNEL_PERMS, 'announcement'],
+      [settings.audit_channel_id, REQUIRED_BOT_LOG_PERMS, 'audit'],
+      [settings.error_log_channel_id, REQUIRED_BOT_LOG_PERMS, 'error_log'],
     ];
-    for (const [id, required] of targets) {
+    const problems = [];
+    for (const [id, required, slot] of targets) {
       if (!id) continue;
       const ch = await guild.channels.fetch(id).catch(() => null);
-      if (!ch?.isTextBased?.()) continue;
-      await ensureBotCanPost(ch, required);
+      if (!ch?.isTextBased?.()) {
+        problems.push({ reason: 'no_view', missing: required, channel: { id }, slot });
+        continue;
+      }
+      const result = await ensureBotCanPost(ch, required);
+      if (!result.ok) {
+        logger.warn('channel_perms_unfixable', {
+          guild_id: guild.id,
+          channel_id: ch.id,
+          slot,
+          reason: result.reason,
+          missing: result.missing?.map((p) => permLabel(p)),
+          code: result.code,
+        });
+        problems.push({ ...result, slot });
+      }
+    }
+    if (problems.length) {
+      await notifyOwnerOfPermIssues(guild, problems);
     }
   } catch (err) {
-    logger.warn('ensureBotPermsOnConfiguredChannels failed', { guild_id: guild.id, error: err });
+    logger.warn('ensureBotPermsOnConfiguredChannels failed', { guild_id: guild.id, error: err?.message });
   }
 }
 
@@ -142,7 +206,7 @@ async function _ensureBirthdayClubChannel(guild) {
         });
         // Self-heal perms in case a category/role override was added after
         // the channel was first configured.
-        await ensureBotCanPost(existing);
+        await ensureBotCanPost(existing).catch(() => {});
         return existing;
       }
       // configured channel is gone — fall through and re-provision
@@ -245,7 +309,7 @@ async function _ensureBirthdayClubChannel(guild) {
     // Make sure the bot can post here — adds a self-overwrite if a pre-existing
     // channel was adopted (case 2) and its perms don't allow us. No-op on
     // freshly created channels because we already set the overwrite at create.
-    await ensureBotCanPost(channel);
+    await ensureBotCanPost(channel).catch(() => {});
 
     if (shouldPostPanel) {
       try {
