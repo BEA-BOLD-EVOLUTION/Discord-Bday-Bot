@@ -9,6 +9,16 @@ import { getNextRunsByRegion } from './scheduler.js';
 // JSON logs and the in-memory error buffer (admin debug panel).
 export async function runStartupHealthCheck(client) {
   const startedAt = Date.now();
+
+  // ClientReady can occasionally fire before GUILD_CREATE events finish
+  // hydrating the cache (we saw guilds:0 in a real boot). Wait up to 10s
+  // for at least one guild before running the per-guild checks.
+  if (client.guilds.cache.size === 0) {
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      if (client.guilds.cache.size > 0) break;
+    }
+  }
   logger.info('startup_health_check_begin', { user: client.user?.tag, guilds: client.guilds.cache.size });
 
   // ---- Discord login ----
