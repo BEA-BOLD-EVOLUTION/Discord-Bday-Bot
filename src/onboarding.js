@@ -154,7 +154,6 @@ async function _ensureBirthdayClubChannel(guild) {
         });
         return null;
       }
-      const me = guild.members.me;
       try {
         channel = await guild.channels.create({
           name: DEFAULT_CHANNEL_NAME,
