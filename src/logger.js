@@ -1,0 +1,97 @@
+// Structured logger with an in-memory ring buffer of recent errors.
+// JSON output is enabled when LOG_FORMAT=json so production hosts can ship
+// logs to a centralized aggregator. Secrets are redacted before emission.
+
+const JSON_MODE = process.env.LOG_FORMAT === 'json';
+const DEBUG = !!process.env.DEBUG;
+
+const SECRET_KEYS = /(token|secret|password|api[_-]?key|service[_-]?role|authorization)/i;
+
+function redact(value, depth = 0) {
+  if (value == null) return value;
+  if (depth > 4) return '[depth-limit]';
+  if (typeof value === 'string') {
+    if (value.length > 40 && /^[A-Za-z0-9._\-+/=]+$/.test(value)) return '[REDACTED]';
+    return value;
+  }
+  if (typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (SECRET_KEYS.test(k)) out[k] = '[REDACTED]';
+    else out[k] = redact(v, depth + 1);
+  }
+  return out;
+}
+
+function serializeError(err) {
+  if (!err || typeof err !== 'object') return err;
+  return {
+    name: err.name,
+    message: err.message,
+    code: err.code,
+    stack: err.stack?.split('\n').slice(0, 6).join('\n'),
+  };
+}
+
+const ERROR_BUFFER_LIMIT = 50;
+const errorBuffer = []; // newest first
+
+// Optional sink invoked for every warn/error record. Used by index.js to
+// forward alerts to a per-guild Discord alert channel. Must never throw
+// (the logger is the last line of defense).
+let notifier = null;
+export function setLogNotifier(fn) {
+  notifier = typeof fn === 'function' ? fn : null;
+}
+
+function pushErrorRecord(record) {
+  errorBuffer.unshift(record);
+  if (errorBuffer.length > ERROR_BUFFER_LIMIT) errorBuffer.length = ERROR_BUFFER_LIMIT;
+}
+
+export function getRecentErrors({ guildId = null, limit = 10 } = {}) {
+  const filtered = guildId
+    ? errorBuffer.filter((e) => !e.guild_id || e.guild_id === guildId)
+    : errorBuffer;
+  return filtered.slice(0, limit);
+}
+
+function emit(level, message, fields = {}) {
+  const safeFields = redact(fields) ?? {};
+  if (safeFields.error) safeFields.error = serializeError(safeFields.error);
+  const record = {
+    timestamp: new Date().toISOString(),
+    level,
+    message: typeof message === 'string' ? message : String(message),
+    ...safeFields,
+  };
+  if (level === 'error' || level === 'warn') {
+    pushErrorRecord(record);
+    if (notifier) {
+      try { notifier(record); } catch { /* never throw from logger */ }
+    }
+  }
+
+  if (JSON_MODE) {
+    const line = JSON.stringify(record);
+    if (level === 'error') console.error(line);
+    else if (level === 'warn') console.warn(line);
+    else console.log(line);
+    return;
+  }
+  const prefix = `[${record.timestamp}] [${level}]`;
+  const extra = Object.keys(safeFields).length ? safeFields : '';
+  if (level === 'error') console.error(prefix, record.message, extra);
+  else if (level === 'warn') console.warn(prefix, record.message, extra);
+  else console.log(prefix, record.message, extra);
+}
+
+export const logger = {
+  info: (message, fields) => emit('info', message, fields),
+  warn: (message, fields) => emit('warn', message, fields),
+  error: (message, fields) => emit('error', message, fields),
+  debug: (message, fields) => {
+    if (DEBUG) emit('debug', message, fields);
+  },
+};

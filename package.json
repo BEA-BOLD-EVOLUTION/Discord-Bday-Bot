@@ -1,0 +1,24 @@
+{
+  "name": "orbitday",
+  "version": "1.0.0",
+  "description": "OrbitDay — The Cosmic Birthday Bot. Region-aware shoutouts, zodiac signs, and a mobile-friendly button/select-menu flow.",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "register": "node src/scripts/registerCommands.js",
+    "db:migrate": "node src/scripts/dbMigrate.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "cron-parser": "^4.9.0",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3",
+    "undici": "^6.20.1"
+  }
+}
