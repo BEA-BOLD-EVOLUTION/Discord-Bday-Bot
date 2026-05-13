@@ -60,6 +60,7 @@ export async function handleDebugButton(interaction) {
   if (id === CID.debug.testRole) return await onTestRole(interaction);
   if (id === CID.debug.today) return await onCheckToday(interaction);
   if (id === CID.debug.catchUpMonth) return await onCatchUpMonth(interaction);
+  if (id === CID.debug.belatedHoroscopes) return await onBelatedHoroscopes(interaction);
   if (id === CID.debug.errors) return await onViewErrors(interaction);
   if (id === CID.debug.rebuildPanel) return await onRebuildPanel(interaction);
 }
@@ -301,6 +302,126 @@ async function onCatchUpMonth(interaction) {
   return interaction.editReply(
     `✅ Posted belated message in <#${channel.id}> for ${missed.length} member(s). ` +
       `${alreadyAnnounced} were already announced and skipped.`
+  );
+}
+
+// Standalone horoscope re-post: for every birthday earlier this month
+// (today excluded), post today's horoscope per unique zodiac sign in a
+// fresh message + thread. Does NOT touch birthday_announcements claims —
+// safe to run alongside or after onCatchUpMonth, e.g. to recover a
+// horoscope thread that failed to send.
+async function onBelatedHoroscopes(interaction) {
+  await interaction.deferReply(EPHEMERAL);
+
+  if (!horoscopeEnabled()) {
+    return interaction.editReply('Horoscopes are disabled (HOROSCOPE_ENABLED is not set).');
+  }
+
+  const settings = await getGuildSettings(interaction.guildId);
+  if (!settings?.announcement_channel_id) {
+    return interaction.editReply('No announcement channel configured. Use `/birthday-config` first.');
+  }
+
+  const { month, day: today, isoDate: todayIso } = todayInTimezone();
+  if (today < 2) {
+    return interaction.editReply(`Nothing to post — today is ${todayIso}.`);
+  }
+
+  const rows = await getGuildBirthdaysInMonthRange(interaction.guildId, month, 1, today - 1);
+  if (rows.length === 0) {
+    return interaction.editReply('No birthdays earlier this month.');
+  }
+
+  const channel = await interaction.guild.channels
+    .fetch(settings.announcement_channel_id)
+    .catch(() => null);
+  if (!channel?.isTextBased?.()) {
+    return interaction.editReply('Announcement channel is missing or inaccessible.');
+  }
+
+  // Group by zodiac sign.
+  const bySign = new Map();
+  for (const r of rows) {
+    const sign = zodiacFor(r.month, r.day);
+    if (!sign) continue;
+    if (!bySign.has(sign.id)) bySign.set(sign.id, { sign, members: [] });
+    bySign.get(sign.id).members.push(r);
+  }
+  if (bySign.size === 0) {
+    return interaction.editReply('No valid zodiac signs in the missed list.');
+  }
+
+  // Post a small header message so we have something to attach the thread to.
+  let header;
+  try {
+    header = await channel.send({
+      content: `🔮 **Belated Horoscopes — ${MONTH_NAMES[month - 1]}**\n_For everyone whose birthday was earlier this month._`,
+      allowedMentions: { parse: [] },
+    });
+  } catch (err) {
+    logger.error('Belated horoscope header send failed', { guild_id: interaction.guildId, error: err });
+    await reportToErrorChannel(interaction, 'Belated horoscope header failed', 'error', err);
+    return interaction.editReply('Failed to post the horoscope header. See the error log channel.');
+  }
+
+  let target = channel;
+  if (threadsEnabled() && typeof header.startThread === 'function') {
+    const thread = await header
+      .startThread({
+        name: `🔮 Belated Horoscopes · ${MONTH_NAMES[month - 1]}`,
+        autoArchiveDuration: 1440,
+        reason: 'OrbitDay belated horoscope thread (standalone)',
+      })
+      .catch((err) => {
+        logger.warn('Failed to create standalone belated horoscope thread; falling back to channel', {
+          guild_id: interaction.guildId,
+          error: err,
+        });
+        return null;
+      });
+    if (thread) target = thread;
+  }
+
+  let posted = 0;
+  let failed = 0;
+  for (const { sign, members } of bySign.values()) {
+    try {
+      const text = await fetchDailyHoroscope(sign.id, todayIso);
+      if (!text) {
+        failed++;
+        continue;
+      }
+      const who = members
+        .map((m) => `<@${m.user_id}> (${formatBirthday(m.month, m.day)})`)
+        .join(', ');
+      const embed = new EmbedBuilder()
+        .setTitle(`${sign.emoji} Today's ${sign.name} Horoscope`)
+        .setDescription(text.length > 4000 ? `${text.slice(0, 3997)}…` : text)
+        .addFields({ name: 'For', value: who.slice(0, 1024) })
+        .setFooter({ text: `OrbitDay · The Cosmic Birthday Bot · ${sign.element}` })
+        .setColor(elementColor(sign.element));
+      await target.send({
+        embeds: [embed],
+        allowedMentions: { users: members.map((m) => m.user_id) },
+      });
+      posted++;
+    } catch (err) {
+      failed++;
+      logger.warn('Failed to send standalone belated horoscope embed', {
+        guild_id: interaction.guildId,
+        sign: sign.id,
+        error: err,
+      });
+    }
+  }
+
+  await reportToErrorChannel(
+    interaction,
+    `${interaction.user.tag} posted belated horoscopes: ${posted} sign(s), ${failed} failed.`,
+    'info'
+  );
+  return interaction.editReply(
+    `✅ Posted ${posted} horoscope embed(s) in <#${channel.id}>${failed ? ` (${failed} failed)` : ''}.`
   );
 }
 
