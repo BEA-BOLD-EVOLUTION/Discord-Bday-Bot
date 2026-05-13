@@ -29,6 +29,17 @@ client.once(Events.ClientReady, async (c) => {
 });
 
 client.on(Events.GuildCreate, async (guild) => {
+  // Events.GuildCreate fires twice in a bot's lifetime per guild:
+  //   (a) during initial gateway hydration on every startup — client.isReady()
+  //       is FALSE here. The ClientReady back-fill loop will handle these, so
+  //       skipping avoids racing with the back-fill and creating duplicate
+  //       Birthday Club channels.
+  //   (b) when the bot is actually added to a new server — client.isReady()
+  //       is TRUE. Onboard immediately.
+  if (!client.isReady()) {
+    logger.info('guild_create_hydration_skip', { guild_id: guild.id, name: guild.name });
+    return;
+  }
   logger.info('guild_create', { guild_id: guild.id, name: guild.name });
   await ensureBirthdayClubChannel(guild);
 });
@@ -37,7 +48,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
     return handleCommand(interaction);
   }
-  if (interaction.isButton() || interaction.isStringSelectMenu()) {
+  if (
+    interaction.isButton() ||
+    interaction.isStringSelectMenu() ||
+    interaction.isChannelSelectMenu() ||
+    interaction.isRoleSelectMenu()
+  ) {
     return handleInteraction(interaction);
   }
 });

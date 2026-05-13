@@ -1,15 +1,18 @@
 import { MessageFlags } from 'discord.js';
-import { CID, buildMonthSelect, buildDaySelect, buildConfirm } from './ui.js';
+import { CID, buildMonthSelect, buildDaySelect, buildConfirm, buildConfigPanel, buildAdvancedConfig } from './ui.js';
 import {
   upsertBirthday,
   deleteBirthday,
   getBirthday,
+  getGuildSettings,
+  updateGuildSettings,
 } from './db.js';
 import { isValidDate, formatBirthday } from './utils/dates.js';
 import { formatZodiac } from './utils/zodiac.js';
 import { isValidRegion, regionLabel, regionFromLocale } from './regions.js';
 import { logger } from './logger.js';
 import { handleDebugButton, reportToErrorChannel } from './debug.js';
+import { isAdmin } from './utils/permissions.js';
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
@@ -19,8 +22,18 @@ const REMOVE_COOLDOWN_MS = 3_000;
 
 export async function handleInteraction(interaction) {
   try {
+    // Admin config panel — channel/role/string select + buttons under `cfg:`.
+    const cid = interaction.customId ?? '';
+    if (cid.startsWith('cfg:')) return await handleConfig(interaction);
+
     if (interaction.isButton()) return await handleButton(interaction);
-    if (interaction.isStringSelectMenu()) return await handleSelect(interaction);
+    if (
+      interaction.isStringSelectMenu() ||
+      interaction.isChannelSelectMenu() ||
+      interaction.isRoleSelectMenu()
+    ) {
+      return await handleSelect(interaction);
+    }
   } catch (err) {
     logger.error('Interaction error', {
       guild_id: interaction.guildId,
@@ -138,4 +151,84 @@ async function handleSelect(interaction) {
     const region = regionFromLocale(interaction.locale);
     return interaction.update(buildConfirm(month, day, region));
   }
+}
+
+// ---------- Admin config panel ----------
+// Handles every component with a `cfg:` customId. Each handler writes to
+// guild_settings and either re-renders the main panel in place (so the
+// summary always reflects truth) or sends an ephemeral follow-up for the
+// advanced sub-pickers.
+async function handleConfig(interaction) {
+  if (!interaction.guildId) {
+    return interaction.reply({ content: 'Server only.', ...EPHEMERAL });
+  }
+  if (!(await isAdmin(interaction))) {
+    return interaction.reply({ content: 'You do not have permission to do that.', ...EPHEMERAL });
+  }
+
+  const id = interaction.customId;
+  const guildId = interaction.guildId;
+
+  // Helper: persist a patch, then re-render the main panel in place.
+  const saveAndRefresh = async (patch) => {
+    if (patch) await updateGuildSettings(guildId, patch);
+    const settings = await getGuildSettings(guildId);
+    return interaction.update(buildConfigPanel(settings));
+  };
+
+  // Channel selects (main + advanced)
+  if (interaction.isChannelSelectMenu()) {
+    const channelId = interaction.values?.[0];
+    if (!channelId) return saveAndRefresh(null);
+    if (id === CID.cfg.chCollection) return saveAndRefresh({ collection_channel_id: channelId });
+    if (id === CID.cfg.chAnnouncement) return saveAndRefresh({ announcement_channel_id: channelId });
+    if (id === CID.cfg.chAudit) {
+      await updateGuildSettings(guildId, { audit_channel_id: channelId });
+      return interaction.update({ content: `✅ Audit channel set to <#${channelId}>.`, components: [], embeds: [] });
+    }
+    if (id === CID.cfg.chErrorLog) {
+      await updateGuildSettings(guildId, { error_log_channel_id: channelId });
+      return interaction.update({ content: `✅ Alert channel set to <#${channelId}>.`, components: [], embeds: [] });
+    }
+  }
+
+  // Role selects
+  if (interaction.isRoleSelectMenu()) {
+    const roleId = interaction.values?.[0];
+    if (!roleId) return saveAndRefresh(null);
+    if (id === CID.cfg.roleBirthday) return saveAndRefresh({ birthday_role_id: roleId });
+    if (id === CID.cfg.roleAdmin) {
+      await updateGuildSettings(guildId, { admin_role_id: roleId });
+      return interaction.update({ content: `✅ Admin role set to <@&${roleId}>.`, components: [], embeds: [] });
+    }
+  }
+
+  // Advanced string select (opens a follow-up with the appropriate picker)
+  if (interaction.isStringSelectMenu() && id === CID.cfg.advanced) {
+    const target = interaction.values?.[0];
+    return interaction.reply({ ...buildAdvancedConfig(target), ...EPHEMERAL });
+  }
+
+  // Toggle buttons + refresh
+  if (interaction.isButton()) {
+    const current = await getGuildSettings(guildId);
+    if (id === CID.cfg.toggleAnnouncements) {
+      const next = current?.announcements_enabled === false ? true : false;
+      return saveAndRefresh({ announcements_enabled: next });
+    }
+    if (id === CID.cfg.toggleRole) {
+      const next = current?.role_enabled === false ? true : false;
+      return saveAndRefresh({ role_enabled: next });
+    }
+    if (id === CID.cfg.toggleDebug) {
+      const next = !current?.debug_mode;
+      return saveAndRefresh({ debug_mode: next });
+    }
+    if (id === CID.cfg.refresh) {
+      return saveAndRefresh(null);
+    }
+  }
+
+  // Unknown cfg interaction — fall through silently.
+  return interaction.reply({ content: 'Unhandled config action.', ...EPHEMERAL });
 }

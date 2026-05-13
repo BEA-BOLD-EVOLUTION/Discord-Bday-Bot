@@ -5,7 +5,7 @@ import {
   ChannelType,
   AttachmentBuilder,
 } from 'discord.js';
-import { buildPanelMessage } from './ui.js';
+import { buildPanelMessage, buildConfigPanel } from './ui.js';
 import {
   getGuildSettings,
   updateGuildSettings,
@@ -29,6 +29,13 @@ export const commandDefinitions = [
   new SlashCommandBuilder()
     .setName('birthday-panel')
     .setDescription('Post the public Birthday Club panel in this channel.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDMPermission(false)
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('birthday-config')
+    .setDescription('Open the interactive admin config panel for this server.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDMPermission(false)
     .toJSON(),
@@ -152,6 +159,7 @@ export async function handleCommand(interaction) {
 
   try {
     if (name === 'birthday-panel') return await cmdPanel(interaction);
+    if (name === 'birthday-config') return await cmdConfig(interaction);
     if (name === 'birthday-setup') return await cmdSetup(interaction);
     if (name === 'birthday-add-for') return await cmdAddFor(interaction);
     if (name === 'birthday-import') return await cmdImport(interaction);
@@ -179,6 +187,14 @@ async function cmdPanel(interaction) {
   await interaction.channel.send(buildPanelMessage());
   await updateGuildSettings(interaction.guildId, { collection_channel_id: interaction.channelId });
   return interaction.reply({ content: '✅ Panel posted.', ...EPHEMERAL });
+}
+
+async function cmdConfig(interaction) {
+  if (!(await isAdmin(interaction))) {
+    return interaction.reply({ content: 'You do not have permission to do that.', ...EPHEMERAL });
+  }
+  const settings = await getGuildSettings(interaction.guildId);
+  return interaction.reply({ ...buildConfigPanel(settings), ...EPHEMERAL });
 }
 
 async function cmdSetup(interaction) {

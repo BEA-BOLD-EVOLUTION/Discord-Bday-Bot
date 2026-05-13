@@ -3,6 +3,9 @@ import {
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
+  ChannelSelectMenuBuilder,
+  RoleSelectMenuBuilder,
+  ChannelType,
   EmbedBuilder,
 } from 'discord.js';
 import { MONTHS, daysInMonth, monthName, formatBirthday } from './utils/dates.js';
@@ -39,6 +42,21 @@ export const CID = {
     today: 'debug:today',
     errors: 'debug:errors',
     rebuildPanel: 'debug:rebuild_panel',
+  },
+  // Admin config panel. All custom IDs are prefixed `cfg:` so the
+  // interaction router can dispatch in one place.
+  cfg: {
+    chCollection: 'cfg:ch:collection',
+    chAnnouncement: 'cfg:ch:announcement',
+    chAudit: 'cfg:ch:audit',
+    chErrorLog: 'cfg:ch:errorlog',
+    roleBirthday: 'cfg:role:birthday',
+    roleAdmin: 'cfg:role:admin',
+    toggleAnnouncements: 'cfg:toggle:announcements',
+    toggleRole: 'cfg:toggle:role',
+    toggleDebug: 'cfg:toggle:debug',
+    advanced: 'cfg:advanced',
+    refresh: 'cfg:refresh',
   },
 };
 
@@ -179,4 +197,161 @@ export function buildDebugPanel(state) {
   );
 
   return { embeds: [embed], components: [row1, row2] };
+}
+
+// ---------- Admin config panel ----------
+// One ephemeral interactive surface that replaces /birthday-setup's nine
+// slash options. Layout:
+//   Row 1: ChannelSelect — collection (panel) channel
+//   Row 2: ChannelSelect — announcement channel
+//   Row 3: RoleSelect    — birthday role
+//   Row 4: StringSelect  — "Configure more…" (advanced channels/role)
+//   Row 5: Buttons       — toggles + refresh
+// Discord caps a message at 5 ActionRows, so the less-common settings
+// (audit/error-log channels, admin role) live behind the advanced select.
+
+function settingsSummary(settings) {
+  const s = settings ?? {};
+  return [
+    `**Collection channel:** ${s.collection_channel_id ? `<#${s.collection_channel_id}>` : '_unset_'}`,
+    `**Announcement channel:** ${s.announcement_channel_id ? `<#${s.announcement_channel_id}>` : '_unset_'}`,
+    `**Birthday role:** ${s.birthday_role_id ? `<@&${s.birthday_role_id}>` : '_unset_'}`,
+    `**Admin role:** ${s.admin_role_id ? `<@&${s.admin_role_id}>` : '_unset_'}`,
+    `**Audit channel:** ${s.audit_channel_id ? `<#${s.audit_channel_id}>` : '_unset_'}`,
+    `**Alert channel:** ${s.error_log_channel_id ? `<#${s.error_log_channel_id}>` : '_unset_'}`,
+    `**Announcements:** ${s.announcements_enabled === false ? '❌ off' : '✅ on'}`,
+    `**Birthday role assignment:** ${s.role_enabled === false ? '❌ off' : '✅ on'}`,
+    `**Debug mode:** ${s.debug_mode ? '🐛 on' : 'off'}`,
+  ].join('\n');
+}
+
+export function buildConfigPanel(settings) {
+  const s = settings ?? {};
+  const embed = new EmbedBuilder()
+    .setTitle('⚙️ Birthday Bot — Configuration')
+    .setDescription(
+      [
+        'Click the menus below to update settings. Changes save instantly.',
+        '',
+        settingsSummary(s),
+      ].join('\n')
+    )
+    .setColor(0x5865f2);
+
+  const collectionRow = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder()
+      .setCustomId(CID.cfg.chCollection)
+      .setPlaceholder('Collection channel (where the Birthday Club panel lives)')
+      .addChannelTypes(ChannelType.GuildText)
+      .setMinValues(1)
+      .setMaxValues(1)
+  );
+
+  const announceRow = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder()
+      .setCustomId(CID.cfg.chAnnouncement)
+      .setPlaceholder('Announcement channel (daily birthday shoutouts)')
+      .addChannelTypes(ChannelType.GuildText)
+      .setMinValues(1)
+      .setMaxValues(1)
+  );
+
+  const roleRow = new ActionRowBuilder().addComponents(
+    new RoleSelectMenuBuilder()
+      .setCustomId(CID.cfg.roleBirthday)
+      .setPlaceholder('Birthday role (auto-assigned on members’ birthdays)')
+      .setMinValues(1)
+      .setMaxValues(1)
+  );
+
+  const advancedRow = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(CID.cfg.advanced)
+      .setPlaceholder('Configure more…')
+      .addOptions(
+        { label: 'Audit channel', value: 'audit', description: 'Where bulk import audit logs are posted.' },
+        { label: 'Alert channel', value: 'errorlog', description: 'Where error/warning logs are auto-posted.' },
+        { label: 'Admin role', value: 'admin_role', description: 'Extra role allowed to manage the bot.' },
+      )
+  );
+
+  const annOn = s.announcements_enabled !== false;
+  const roleOn = s.role_enabled !== false;
+  const debugOn = !!s.debug_mode;
+  const toggleRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(CID.cfg.toggleAnnouncements)
+      .setLabel(`Announcements: ${annOn ? 'ON' : 'OFF'}`)
+      .setStyle(annOn ? ButtonStyle.Success : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(CID.cfg.toggleRole)
+      .setLabel(`Role assign: ${roleOn ? 'ON' : 'OFF'}`)
+      .setStyle(roleOn ? ButtonStyle.Success : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(CID.cfg.toggleDebug)
+      .setLabel(`Debug: ${debugOn ? 'ON' : 'OFF'}`)
+      .setStyle(debugOn ? ButtonStyle.Success : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(CID.cfg.refresh)
+      .setLabel('Refresh')
+      .setStyle(ButtonStyle.Secondary),
+  );
+
+  return {
+    embeds: [embed],
+    components: [collectionRow, announceRow, roleRow, advancedRow, toggleRow],
+  };
+}
+
+// Follow-up panel shown after the user picks an "advanced" option above.
+// Returns a single-row component matching the chosen target.
+export function buildAdvancedConfig(target) {
+  if (target === 'audit') {
+    return {
+      content: 'Choose an **audit channel** (admin import audit logs):',
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ChannelSelectMenuBuilder()
+            .setCustomId(CID.cfg.chAudit)
+            .setPlaceholder('Select audit channel')
+            .addChannelTypes(ChannelType.GuildText)
+            .setMinValues(1)
+            .setMaxValues(1)
+        ),
+      ],
+      embeds: [],
+    };
+  }
+  if (target === 'errorlog') {
+    return {
+      content: 'Choose an **alert channel** (error/warning logs):',
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ChannelSelectMenuBuilder()
+            .setCustomId(CID.cfg.chErrorLog)
+            .setPlaceholder('Select alert channel')
+            .addChannelTypes(ChannelType.GuildText)
+            .setMinValues(1)
+            .setMaxValues(1)
+        ),
+      ],
+      embeds: [],
+    };
+  }
+  if (target === 'admin_role') {
+    return {
+      content: 'Choose an **admin role** (extra role allowed to manage the bot):',
+      components: [
+        new ActionRowBuilder().addComponents(
+          new RoleSelectMenuBuilder()
+            .setCustomId(CID.cfg.roleAdmin)
+            .setPlaceholder('Select admin role')
+            .setMinValues(1)
+            .setMaxValues(1)
+        ),
+      ],
+      embeds: [],
+    };
+  }
+  return { content: 'Unknown option.', components: [], embeds: [] };
 }
