@@ -91,9 +91,8 @@ export function buildDaySelect(month, mode = 'add') {
   // selects at 25 options, so we can't show all 31 in one — splitting evenly
   // looks cleaner than 25 + a tiny overflow.
   const all = Array.from({ length: max }, (_, i) => ({ label: String(i + 1), value: String(i + 1) }));
-  const CHUNK = 15;
-  const chunks = [];
-  for (let i = 0; i < all.length; i += CHUNK) chunks.push(all.slice(i, i + CHUNK));
+  // Always exactly two dropdowns: 1–15 and 16–end (end = 28/29/30/31).
+  const chunks = [all.slice(0, 15), all.slice(15)];
 
   const components = chunks.map((chunk, idx) => {
     const first = chunk[0].value;
