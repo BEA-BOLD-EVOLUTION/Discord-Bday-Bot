@@ -3,6 +3,8 @@ import {
   getGuildSettings,
   countBirthdaysForGuild,
   getBirthdaysFor,
+  getGuildBirthdaysInMonthRange,
+  claimAnnouncement,
 } from './db.js';
 import { isAdmin, inspectBotPermissions } from './utils/permissions.js';
 import {
@@ -39,6 +41,7 @@ export async function handleDebugButton(interaction) {
   if (id === CID.debug.testAnnounce) return await onTestAnnouncement(interaction);
   if (id === CID.debug.testRole) return await onTestRole(interaction);
   if (id === CID.debug.today) return await onCheckToday(interaction);
+  if (id === CID.debug.catchUpMonth) return await onCatchUpMonth(interaction);
   if (id === CID.debug.errors) return await onViewErrors(interaction);
   if (id === CID.debug.rebuildPanel) return await onRebuildPanel(interaction);
 }
@@ -127,6 +130,95 @@ async function onCheckToday(interaction) {
   );
   return interaction.editReply(
     `**Today's birthdays (${formatBirthday(month, day)} · ${isoDate}):**\n${lines.join('\n')}`
+  );
+}
+
+// Posts a single belated announcement for any birthday earlier this month
+// that wasn't announced yet (e.g. bot was offline that day). Idempotent:
+// each entry is claimed in `birthday_announcements` so re-clicking, or the
+// scheduler later catching up, won't double-post.
+async function onCatchUpMonth(interaction) {
+  await interaction.deferReply(EPHEMERAL);
+  const settings = await getGuildSettings(interaction.guildId);
+  if (!settings?.announcement_channel_id) {
+    return interaction.editReply('No announcement channel configured. Use `/birthday-config` first.');
+  }
+
+  const { month, day: today, isoDate: todayIso } = todayInTimezone();
+  if (today < 2) {
+    return interaction.editReply(`Nothing to catch up — today is ${todayIso}.`);
+  }
+
+  const year = todayIso.slice(0, 4);
+  const mm = String(month).padStart(2, '0');
+
+  // Earlier this month, NOT including today (today is the scheduler's job).
+  const candidates = await getGuildBirthdaysInMonthRange(interaction.guildId, month, 1, today - 1);
+  if (candidates.length === 0) {
+    return interaction.editReply(`No birthdays earlier this month to catch up on.`);
+  }
+
+  // Claim each (guild, user, original-date). Anyone already claimed
+  // (already announced on their actual day) is skipped.
+  const missed = [];
+  let alreadyAnnounced = 0;
+  for (const row of candidates) {
+    const dd = String(row.day).padStart(2, '0');
+    const isoForRow = `${year}-${mm}-${dd}`;
+    let claimed = false;
+    try {
+      claimed = await claimAnnouncement(interaction.guildId, row.user_id, isoForRow);
+    } catch (err) {
+      logger.error('Catch-up claim failed', { guild_id: interaction.guildId, user_id: row.user_id, error: err });
+      continue;
+    }
+    if (claimed) missed.push(row);
+    else alreadyAnnounced++;
+  }
+
+  if (missed.length === 0) {
+    return interaction.editReply(
+      `Nothing to post — all ${alreadyAnnounced} earlier birthday(s) this month were already announced.`
+    );
+  }
+
+  const channel = await interaction.guild.channels
+    .fetch(settings.announcement_channel_id)
+    .catch(() => null);
+  if (!channel?.isTextBased?.()) {
+    return interaction.editReply('Announcement channel is missing or inaccessible.');
+  }
+
+  const lines = missed.map(
+    (r) => `• <@${r.user_id}> — ${formatBirthday(r.month, r.day)}`
+  );
+  const content = [
+    `🎂 **Belated Happy Birthday!**`,
+    `_We missed these earlier this month — sending love now:_`,
+    '',
+    ...lines,
+  ].join('\n');
+
+  try {
+    await channel.send({
+      content,
+      // Ping the honorees so they actually see it.
+      allowedMentions: { users: missed.map((r) => r.user_id) },
+    });
+  } catch (err) {
+    logger.error('Catch-up announcement send failed', { guild_id: interaction.guildId, error: err });
+    await reportToErrorChannel(interaction, 'Catch-up announcement failed', 'error', err);
+    return interaction.editReply('Failed to post the catch-up message. See the error log channel.');
+  }
+
+  await reportToErrorChannel(
+    interaction,
+    `${interaction.user.tag} ran catch-up: ${missed.length} belated, ${alreadyAnnounced} already announced.`,
+    'info'
+  );
+  return interaction.editReply(
+    `✅ Posted belated message in <#${channel.id}> for ${missed.length} member(s). ` +
+      `${alreadyAnnounced} were already announced and skipped.`
   );
 }
 

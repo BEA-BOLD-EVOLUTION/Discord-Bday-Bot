@@ -66,6 +66,21 @@ export async function getBirthdaysForRegion(month, day, region) {
   return data ?? [];
 }
 
+// Birthdays in a guild for a given month, with day in [minDay, maxDay].
+// Used by the "catch up missed birthdays this month" admin debug action.
+export async function getGuildBirthdaysInMonthRange(guildId, month, minDay, maxDay) {
+  const { data, error } = await supabase
+    .from('birthdays')
+    .select('*')
+    .eq('guild_id', guildId)
+    .eq('month', month)
+    .gte('day', minDay)
+    .lte('day', maxDay)
+    .order('day', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
 // Bulk insert; returns counts. Dedupes within the batch and (by default)
 // skips entries already present in the database.
 export async function bulkInsertBirthdays(rows, { overwrite = false } = {}) {

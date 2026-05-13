@@ -42,6 +42,7 @@ export const CID = {
     today: 'debug:today',
     errors: 'debug:errors',
     rebuildPanel: 'debug:rebuild_panel',
+    catchUpMonth: 'debug:catchup_month',
   },
   // Admin config panel. All custom IDs are prefixed `cfg:` so the
   // interaction router can dispatch in one place.
@@ -220,6 +221,7 @@ export function buildDebugPanel(state) {
   );
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(CID.debug.today).setLabel("Check Today's Birthdays").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(CID.debug.catchUpMonth).setLabel('Catch Up Missed (This Month)').setEmoji('⏪').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(CID.debug.errors).setLabel('View Recent Errors').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(CID.debug.rebuildPanel).setLabel('Rebuild Birthday Panel').setStyle(ButtonStyle.Danger)
   );
