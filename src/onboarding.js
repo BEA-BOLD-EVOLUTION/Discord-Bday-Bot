@@ -20,16 +20,25 @@ const REQUIRED_BOT_CHANNEL_PERMS = [
   PermissionFlagsBits.SendMessagesInThreads,
 ];
 
+// Reduced perm set for read-only-ish channels (audit, alert). Bot needs to be
+// able to see and write to them, but doesn't need thread perms.
+const REQUIRED_BOT_LOG_PERMS = [
+  PermissionFlagsBits.ViewChannel,
+  PermissionFlagsBits.SendMessages,
+  PermissionFlagsBits.EmbedLinks,
+  PermissionFlagsBits.ReadMessageHistory,
+];
+
 // Ensure the bot has the perms it needs on this channel. If a channel-level
 // override (or category inheritance) is blocking us, add an explicit allow
 // overwrite for the bot's own member. Requires ManageChannels on the bot's
 // role; if we don't have it, we log and bail so the caller can degrade
 // gracefully.
-async function ensureBotCanPost(channel) {
+async function ensureBotCanPost(channel, required = REQUIRED_BOT_CHANNEL_PERMS) {
   const me = channel.guild.members.me;
   if (!me) return false;
   const current = channel.permissionsFor(me);
-  if (current && REQUIRED_BOT_CHANNEL_PERMS.every((p) => current.has(p))) {
+  if (current && required.every((p) => current.has(p))) {
     return true;
   }
   if (!me.permissions.has(PermissionFlagsBits.ManageChannels)) {
@@ -42,10 +51,10 @@ async function ensureBotCanPost(channel) {
   try {
     await channel.permissionOverwrites.edit(
       me.id,
-      Object.fromEntries(REQUIRED_BOT_CHANNEL_PERMS.map((p) => [p, true])),
-      { reason: 'OrbitDay onboarding: grant self perms to post panel/threads' }
+      Object.fromEntries(required.map((p) => [p, true])),
+      { reason: 'OrbitDay onboarding: grant self perms' }
     );
-    logger.info('birthday_club_channel_perms_granted', {
+    logger.info('channel_perms_granted', {
       guild_id: channel.guild.id,
       channel_id: channel.id,
     });
@@ -57,6 +66,30 @@ async function ensureBotCanPost(channel) {
       error: err,
     });
     return false;
+  }
+}
+
+// Walk every configured channel for this guild and self-grant any missing
+// perms. Called on startup back-fill and on GuildCreate so admins never
+// have to manually fix channel overrides after configuring a channel.
+export async function ensureBotPermsOnConfiguredChannels(guild) {
+  try {
+    const settings = await getGuildSettings(guild.id);
+    if (!settings) return;
+    const targets = [
+      [settings.collection_channel_id, REQUIRED_BOT_CHANNEL_PERMS],
+      [settings.announcement_channel_id, REQUIRED_BOT_CHANNEL_PERMS],
+      [settings.audit_channel_id, REQUIRED_BOT_LOG_PERMS],
+      [settings.error_log_channel_id, REQUIRED_BOT_LOG_PERMS],
+    ];
+    for (const [id, required] of targets) {
+      if (!id) continue;
+      const ch = await guild.channels.fetch(id).catch(() => null);
+      if (!ch?.isTextBased?.()) continue;
+      await ensureBotCanPost(ch, required);
+    }
+  } catch (err) {
+    logger.warn('ensureBotPermsOnConfiguredChannels failed', { guild_id: guild.id, error: err });
   }
 }
 
@@ -107,6 +140,9 @@ async function _ensureBirthdayClubChannel(guild) {
           guild_id: guild.id,
           channel_id: existing.id,
         });
+        // Self-heal perms in case a category/role override was added after
+        // the channel was first configured.
+        await ensureBotCanPost(existing);
         return existing;
       }
       // configured channel is gone — fall through and re-provision

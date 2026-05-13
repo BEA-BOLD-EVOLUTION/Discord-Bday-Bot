@@ -13,6 +13,7 @@ import { isValidRegion, regionLabel, regionFromLocale } from './regions.js';
 import { logger } from './logger.js';
 import { handleDebugButton, reportToErrorChannel } from './debug.js';
 import { isAdmin } from './utils/permissions.js';
+import { ensureBotPermsOnConfiguredChannels } from './onboarding.js';
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
@@ -180,14 +181,18 @@ async function handleConfig(interaction) {
   if (interaction.isChannelSelectMenu()) {
     const channelId = interaction.values?.[0];
     if (!channelId) return saveAndRefresh(null);
+    // Self-heal: grant the bot any missing perms on the newly-selected channel.
+    ensureBotPermsOnConfiguredChannels(interaction.guild).catch(() => {});
     if (id === CID.cfg.chCollection) return saveAndRefresh({ collection_channel_id: channelId });
     if (id === CID.cfg.chAnnouncement) return saveAndRefresh({ announcement_channel_id: channelId });
     if (id === CID.cfg.chAudit) {
       await updateGuildSettings(guildId, { audit_channel_id: channelId });
+      await ensureBotPermsOnConfiguredChannels(interaction.guild).catch(() => {});
       return interaction.update({ content: `✅ Audit channel set to <#${channelId}>.`, components: [], embeds: [] });
     }
     if (id === CID.cfg.chErrorLog) {
       await updateGuildSettings(guildId, { error_log_channel_id: channelId });
+      await ensureBotPermsOnConfiguredChannels(interaction.guild).catch(() => {});
       return interaction.update({ content: `✅ Alert channel set to <#${channelId}>.`, components: [], embeds: [] });
     }
   }

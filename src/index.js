@@ -5,7 +5,7 @@ import { handleInteraction } from './interactions.js';
 import { handleCommand } from './commands.js';
 import { startScheduler } from './scheduler.js';
 import { runStartupHealthCheck } from './healthcheck.js';
-import { ensureBirthdayClubChannel, ensureBirthdayRole } from './onboarding.js';
+import { ensureBirthdayClubChannel, ensureBirthdayRole, ensureBotPermsOnConfiguredChannels } from './onboarding.js';
 import { installAlertNotifier } from './alerts.js';
 
 const client = new Client({
@@ -28,6 +28,9 @@ client.once(Events.ClientReady, async (c) => {
     ensureBirthdayRole(guild).catch((err) =>
       logger.error('Birthday role back-fill failed', { guild_id: guild.id, error: err })
     );
+    ensureBotPermsOnConfiguredChannels(guild).catch((err) =>
+      logger.error('Channel perms back-fill failed', { guild_id: guild.id, error: err })
+    );
   }
 });
 
@@ -46,6 +49,7 @@ client.on(Events.GuildCreate, async (guild) => {
   logger.info('guild_create', { guild_id: guild.id, name: guild.name });
   await ensureBirthdayClubChannel(guild);
   await ensureBirthdayRole(guild);
+  await ensureBotPermsOnConfiguredChannels(guild);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
