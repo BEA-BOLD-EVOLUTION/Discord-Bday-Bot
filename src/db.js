@@ -158,6 +158,34 @@ export async function clearActiveBirthdayRole(guildId, userId) {
   if (error) throw error;
 }
 
+// ---------- horoscope threads (auto-cleanup) ----------
+
+export async function recordHoroscopeThread(guildId, channelId, threadId) {
+  const { error } = await supabase
+    .from('horoscope_threads')
+    .upsert({ guild_id: guildId, channel_id: channelId, thread_id: threadId }, { onConflict: 'thread_id' });
+  if (error) throw error;
+}
+
+// Returns threads created before `cutoffIso` (ISO timestamp). Caller deletes
+// them on Discord and then calls `deleteHoroscopeThread` to drop the row.
+export async function getHoroscopeThreadsOlderThan(cutoffIso) {
+  const { data, error } = await supabase
+    .from('horoscope_threads')
+    .select('*')
+    .lt('created_at', cutoffIso);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function deleteHoroscopeThread(threadId) {
+  const { error } = await supabase
+    .from('horoscope_threads')
+    .delete()
+    .eq('thread_id', threadId);
+  if (error) throw error;
+}
+
 // ---------- announcement dedupe ----------
 
 // Attempts to claim an announcement slot for (guild,user,date). Returns true if

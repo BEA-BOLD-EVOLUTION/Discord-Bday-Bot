@@ -8,6 +8,9 @@ import {
   clearActiveBirthdayRole,
   claimAnnouncement,
   recordSchedulerRun,
+  recordHoroscopeThread,
+  getHoroscopeThreadsOlderThan,
+  deleteHoroscopeThread,
 } from './db.js';
 import { logger } from './logger.js';
 import { todayInTimezone } from './utils/dates.js';
@@ -144,6 +147,12 @@ async function _runDailyJobInner(client, options = {}) {
         } catch (err) {
           totals.errors++;
           logger.error('Failed to remove expired birthday roles', { error: err });
+        }
+        try {
+          await removeExpiredHoroscopeThreads(client);
+        } catch (err) {
+          totals.errors++;
+          logger.error('Failed to remove expired horoscope threads', { error: err });
         }
       }
     }
@@ -360,7 +369,11 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
                 const thread = await sentMessage
                   .startThread({
                     name: `🔮 ${monthName} ${day} · ${sign.emoji} ${sign.name}`,
-                    autoArchiveDuration: 1440, // 24h
+                    // Discord's max auto-archive is 7 days (10080 min). We
+                    // also persist the thread + run a daily cleanup pass
+                    // (see removeExpiredHoroscopeThreads) so archived
+                    // threads get fully deleted, not just hidden.
+                    autoArchiveDuration: 10080,
                     reason: 'OrbitDay daily horoscope thread',
                   })
                   .catch((err) => {
@@ -370,7 +383,20 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
                     });
                     return null;
                   });
-                if (thread) target = thread;
+                if (thread) {
+                  target = thread;
+                  if (!isTest) {
+                    try {
+                      await recordHoroscopeThread(guildId, channel.id, thread.id);
+                    } catch (err) {
+                      logger.warn('Failed to record horoscope thread for later cleanup', {
+                        guild_id: guildId,
+                        thread_id: thread.id,
+                        error: err,
+                      });
+                    }
+                  }
+                }
               }
 
               await target.send({ embeds: [embed], allowedMentions: { parse: [] } });
@@ -435,4 +461,55 @@ async function removeExpiredBirthdayRoles(client) {
       logger.warn('Failed to clear expired birthday role', { error: err });
     }
   }
+}
+
+// Deletes horoscope threads older than the retention window. Discord itself
+// only ever archives threads — never deletes them — so without this pass the
+// announcement channel slowly accumulates a thread per day forever.
+// Retention window is configurable via HOROSCOPE_THREAD_RETENTION_DAYS
+// (default: 7 days). Set to 0 or negative to disable cleanup entirely.
+async function removeExpiredHoroscopeThreads(client) {
+  const days = Number(process.env.HOROSCOPE_THREAD_RETENTION_DAYS ?? 7);
+  if (!Number.isFinite(days) || days <= 0) {
+    logger.info('Horoscope thread cleanup disabled', { retention_days: days });
+    return;
+  }
+  const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  const cutoffIso = new Date(cutoffMs).toISOString();
+  const expired = await getHoroscopeThreadsOlderThan(cutoffIso);
+  if (expired.length === 0) return;
+
+  logger.info('Removing expired horoscope threads', { count: expired.length, cutoff: cutoffIso });
+  let deleted = 0;
+  let dropped = 0;
+  for (const t of expired) {
+    try {
+      const guild = await client.guilds.fetch(t.guild_id).catch(() => null);
+      if (!guild) {
+        // Bot is no longer in the guild — just drop the bookkeeping row.
+        await deleteHoroscopeThread(t.thread_id);
+        dropped++;
+        continue;
+      }
+      const thread = await guild.channels.fetch(t.thread_id).catch(() => null);
+      if (thread && typeof thread.delete === 'function') {
+        await thread.delete('OrbitDay horoscope thread retention expired').catch((err) => {
+          logger.warn('Failed to delete expired horoscope thread', {
+            guild_id: t.guild_id,
+            thread_id: t.thread_id,
+            error: err,
+          });
+        });
+        deleted++;
+      } else {
+        // Thread already gone (manually deleted, channel deleted, etc.) —
+        // just clean up the row.
+        dropped++;
+      }
+      await deleteHoroscopeThread(t.thread_id);
+    } catch (err) {
+      logger.warn('Horoscope thread cleanup error', { thread_id: t.thread_id, error: err });
+    }
+  }
+  logger.info('Horoscope thread cleanup complete', { deleted, dropped_rows_only: dropped, retention_days: days });
 }

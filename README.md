@@ -22,7 +22,7 @@ the member's zodiac sign.
   - 🌏 South Asia — 04:30 UTC (10am IST)
   - 🌏 East Asia — 02:00 UTC (10am CST/SGT)
 - 📦 Each region posts **one consolidated message** listing all that day's birthdays by display name (no @mentions, no ping spam)
-- ✨ **Cosmic shoutouts** — each birthday line includes the member's zodiac sign (♈ Aries, ♉ Taurus, …), and the announcement spawns an auto-archiving thread (`🔮 Oct 16 · ♎ Libra`) containing that day's horoscope, coloured by element (Fire / Earth / Air / Water). Toggle with `HOROSCOPE_ENABLED=false` or post inline with `HOROSCOPE_THREAD=false`.
+- ✨ **Cosmic shoutouts** — each birthday line includes the member's zodiac sign (♈ Aries, ♉ Taurus, …), and the announcement spawns an auto-archiving thread (`🔮 Oct 16 · ♎ Libra`) containing that day's horoscope, coloured by element (Fire / Earth / Air / Water). Threads are auto-deleted after 7 days (configurable via `HOROSCOPE_THREAD_RETENTION_DAYS`) so the channel stays tidy. Toggle with `HOROSCOPE_ENABLED=false` or post inline with `HOROSCOPE_THREAD=false`.
 - 🚨 Optional **alert channel** — runtime warnings/errors are auto-posted here so admins notice problems without tailing logs
 - 🎭 Optional birthday role (auto-assigned, auto-removed next day)
 - 🩺 **Self-healing onboarding** — when added to a server (or when `/birthday-setup` runs) the bot self-grants the channel overwrites it needs on configured channels, auto-creates the birthday role if missing, and DMs the guild owner with a clear diagnostic when it can't fix something itself

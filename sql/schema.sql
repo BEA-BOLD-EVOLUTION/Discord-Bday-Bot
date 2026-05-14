@@ -126,3 +126,16 @@ begin
   return found;
 end;
 $$;
+
+-- Tracks horoscope threads spawned by the daily birthday announcement so we
+-- can delete them after a retention window (default: 7 days). Without this,
+-- Discord only archives threads — it never deletes them, so the channel
+-- accumulates clutter over time.
+create table if not exists horoscope_threads (
+  guild_id text not null,
+  channel_id text not null,
+  thread_id text not null primary key,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists horoscope_threads_created_at_idx on horoscope_threads (created_at);
