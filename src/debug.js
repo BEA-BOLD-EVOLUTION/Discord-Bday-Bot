@@ -17,6 +17,7 @@ import { todayInTimezone, formatBirthday } from './utils/dates.js';
 import { formatZodiac, zodiacFor } from './utils/zodiac.js';
 import { fetchDailyHoroscope, horoscopeEnabled, threadsEnabled } from './utils/horoscope.js';
 import { logger, getRecentErrors } from './logger.js';
+import { withLock } from './utils/locks.js';
 
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -55,13 +56,31 @@ export async function handleDebugButton(interaction) {
   }
   const id = interaction.customId;
 
+  // Read-only actions don't need a lock — they're idempotent + cheap.
   if (id === CID.debug.perms) return await onCheckPermissions(interaction);
+  if (id === CID.debug.today) return await onCheckToday(interaction);
+  if (id === CID.debug.errors) return await onViewErrors(interaction);
+
+  // Mutating actions: prevent the same admin (or multiple admins) from
+  // double-firing the same action against one guild while it's still
+  // running. Catch-up is already DB-idempotent via claimAnnouncement,
+  // but locking saves wasted work + redundant message sends.
+  const action = id;
+  const lockKey = `debug:${interaction.guildId}:${action}`;
+  const r = await withLock(lockKey, () => dispatchDebugAction(id, interaction));
+  if (!r.acquired) {
+    const reply = { content: '⏳ That action is already running for this server. Try again in a moment.', ...EPHEMERAL };
+    if (interaction.deferred || interaction.replied) return interaction.followUp(reply);
+    return interaction.reply(reply);
+  }
+  return r.result;
+}
+
+async function dispatchDebugAction(id, interaction) {
   if (id === CID.debug.testAnnounce) return await onTestAnnouncement(interaction);
   if (id === CID.debug.testRole) return await onTestRole(interaction);
-  if (id === CID.debug.today) return await onCheckToday(interaction);
   if (id === CID.debug.catchUpMonth) return await onCatchUpMonth(interaction);
   if (id === CID.debug.belatedHoroscopes) return await onBelatedHoroscopes(interaction);
-  if (id === CID.debug.errors) return await onViewErrors(interaction);
   if (id === CID.debug.rebuildPanel) return await onRebuildPanel(interaction);
 }
 
