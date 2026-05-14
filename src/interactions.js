@@ -112,6 +112,14 @@ async function handleButton(interaction) {
         isPublic: true,
         region,
       });
+      logger.info('Birthday saved', {
+        guild_id: interaction.guildId,
+        user_id: interaction.user.id,
+        username: interaction.user.username,
+        month: m,
+        day: d,
+        region,
+      });
     } catch (err) {
       logger.error('Failed to save birthday', { guild_id: interaction.guildId, user_id: interaction.user.id, error: err });
       reportToErrorChannel(interaction, 'Failed to save user birthday', 'error', err).catch(() => {});

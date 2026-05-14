@@ -299,6 +299,16 @@ async function cmdAddFor(interaction) {
     region,
   });
 
+  logger.info('Birthday saved (admin add)', {
+    guild_id: interaction.guildId,
+    actor_id: interaction.user.id,
+    user_id: member.id,
+    username: member.username,
+    month,
+    day,
+    region,
+  });
+
   await auditLog(
     interaction,
     `${interaction.user.tag} added birthday for <@${member.id}> → ${formatBirthday(month, day)} (${regionLabel(region)})`
