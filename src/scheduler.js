@@ -315,15 +315,18 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
       sub.errors++;
       logger.warn('Announcement channel missing/inaccessible', { guild_id: guildId });
     } else {
-      const lines = announceable.map((a) => {
-        const z = formatZodiac(a.month, a.day);
-        return z
-          ? `• ${escapeMd(a.displayName)} — ${z}`
-          : `• ${escapeMd(a.displayName)}`;
-      });
+      const lines = announceable.map(
+        (a) => `• ${escapeMd(a.displayName)}`
+      );
+      // Everyone announced today shares the same birthday (and therefore the
+      // same zodiac sign), so put the sign once in the header rather than
+      // repeating it next to each user.
+      const { month: hMonth, day: hDay } = announceable[0];
+      const headerZodiac = formatZodiac(hMonth, hDay);
+      const zodiacSuffix = headerZodiac ? ` · ${headerZodiac}` : '';
       const header = isTest
-        ? `🧪 **TEST ONLY — Birthday announcement preview**\n\n🎉 **Today's Birthdays** 🎂`
-        : `🎉 **Today's Birthdays** 🎂`;
+        ? `🧪 **TEST ONLY — Birthday announcement preview**\n\n🎉 **Today's Birthdays** 🎂${zodiacSuffix}`
+        : `🎉 **Today's Birthdays** 🎂${zodiacSuffix}`;
       const content = `${header}\n_${regionLabel(region.id)}_\n${lines.join('\n')}`;
 
       let sentMessage = null;

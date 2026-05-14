@@ -278,13 +278,19 @@ async function onCatchUpMonth(interaction) {
   }
 
   const missedNamed = await resolveDisplayNames(interaction.guild, missed);
-  const lines = missedNamed.map((r) => {
-    const z = formatZodiac(r.month, r.day);
-    const base = `• ${escapeMd(r.displayName)} — ${formatBirthday(r.month, r.day)}`;
-    return z ? `${base} · ${z}` : base;
-  });
+  const lines = missedNamed.map(
+    (r) => `• ${escapeMd(r.displayName)} — ${formatBirthday(r.month, r.day)}`
+  );
+  // All belated birthdays in this batch fall within the same calendar month,
+  // so they typically share a zodiac sign. If the batch happens to straddle
+  // a cusp (e.g. late May = Taurus + Gemini), list both signs in the header
+  // rather than repeating the sign next to every user.
+  const uniqueZodiacs = [
+    ...new Set(missed.map((r) => formatZodiac(r.month, r.day)).filter(Boolean)),
+  ];
+  const headerSuffix = uniqueZodiacs.length ? ` · ${uniqueZodiacs.join(' / ')}` : '';
   const content = [
-    `🎂 **Belated Happy Birthday!**`,
+    `🎂 **Belated Happy Birthday!**${headerSuffix}`,
     `_We missed these earlier this month — sending love now:_`,
     '',
     ...lines,
