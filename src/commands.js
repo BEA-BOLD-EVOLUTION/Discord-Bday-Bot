@@ -20,6 +20,7 @@ import { isAdmin } from './utils/permissions.js';
 import { logger } from './logger.js';
 import { buildDebugPanel, buildDebugState } from './debug.js';
 import { REGIONS, isValidRegion, regionLabel, regionFromLocale } from './regions.js';
+import { aggregateBirthdayMessages } from './utils/parseBirthdays.js';
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
@@ -127,6 +128,31 @@ export const commandDefinitions = [
     .toJSON(),
 
   new SlashCommandBuilder()
+    .setName('birthday-import-channel')
+    .setDescription('Admin: import birthdays by scanning every message in a channel.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDMPermission(false)
+    .addChannelOption((o) =>
+      o
+        .setName('channel')
+        .setDescription('Channel to scan for birthday messages.')
+        .addChannelTypes(ChannelType.GuildText)
+        .setRequired(true)
+    )
+    .addStringOption((o) => {
+      o.setName('region').setDescription('Region used for parsed birthdays (default: americas).');
+      for (const r of REGIONS) o.addChoices({ name: regionLabel(r.id), value: r.id });
+      return o;
+    })
+    .addBooleanOption((o) =>
+      o.setName('overwrite').setDescription('Overwrite existing entries (default: false).')
+    )
+    .addBooleanOption((o) =>
+      o.setName('dry_run').setDescription('Preview parsed birthdays without writing to the DB.')
+    )
+    .toJSON(),
+
+  new SlashCommandBuilder()
     .setName('birthday-view')
     .setDescription('View your saved birthday (or an admin can view another member).')
     .setDMPermission(false)
@@ -163,6 +189,7 @@ export async function handleCommand(interaction) {
     if (name === 'birthday-setup') return await cmdSetup(interaction);
     if (name === 'birthday-add-for') return await cmdAddFor(interaction);
     if (name === 'birthday-import') return await cmdImport(interaction);
+    if (name === 'birthday-import-channel') return await cmdImportChannel(interaction);
     if (name === 'birthday-view') return await cmdView(interaction);
     if (name === 'birthday-remove-for') return await cmdRemoveFor(interaction);
     if (name === 'birthday-debug') return await cmdDebug(interaction);
@@ -416,6 +443,144 @@ async function cmdImport(interaction) {
       })
     );
   }
+
+  return interaction.editReply({ content: summary, files });
+}
+
+const CHANNEL_IMPORT_MAX_PAGES = 50;       // 50 * 100 = 5000 messages
+const CHANNEL_IMPORT_MAX_MESSAGES = 5000;
+
+async function cmdImportChannel(interaction) {
+  if (!(await isAdmin(interaction))) {
+    return interaction.reply({ content: 'You do not have permission to do that.', ...EPHEMERAL });
+  }
+
+  const channelOpt = interaction.options.getChannel('channel', true);
+  const region = interaction.options.getString('region') ?? 'americas';
+  const overwrite = interaction.options.getBoolean('overwrite') ?? false;
+  const dryRun = interaction.options.getBoolean('dry_run') ?? false;
+
+  if (!isValidRegion(region)) {
+    return interaction.reply({ content: `Invalid region "${region}".`, ...EPHEMERAL });
+  }
+
+  await interaction.deferReply(EPHEMERAL);
+
+  let channel;
+  try {
+    channel = await interaction.guild.channels.fetch(channelOpt.id);
+  } catch (err) {
+    logger.warn('Channel import: fetch channel failed', { error: err, channel_id: channelOpt.id });
+    return interaction.editReply('Could not fetch that channel.');
+  }
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    return interaction.editReply('Please pick a regular text channel.');
+  }
+
+  const me = interaction.guild.members.me;
+  const perms = channel.permissionsFor(me);
+  if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.ReadMessageHistory)) {
+    return interaction.editReply(
+      `I need **View Channel** and **Read Message History** in <#${channel.id}> to import from it.`
+    );
+  }
+
+  // Paginate messages oldest-to-newest order doesn't matter; aggregator keeps most-recent by ts.
+  const messages = [];
+  let before;
+  let pages = 0;
+  let truncated = false;
+  try {
+    while (pages < CHANNEL_IMPORT_MAX_PAGES) {
+      const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+      if (batch.size === 0) break;
+      for (const m of batch.values()) {
+        if (m.author?.bot) continue;
+        messages.push({
+          author_id: m.author.id,
+          author: m.author.username,
+          content: m.content ?? '',
+          ts: m.createdTimestamp,
+        });
+        if (messages.length >= CHANNEL_IMPORT_MAX_MESSAGES) break;
+      }
+      pages += 1;
+      before = batch.last()?.id;
+      if (batch.size < 100) break;
+      if (messages.length >= CHANNEL_IMPORT_MAX_MESSAGES) { truncated = true; break; }
+    }
+    if (pages >= CHANNEL_IMPORT_MAX_PAGES) truncated = true;
+  } catch (err) {
+    logger.error('Channel import: pagination failed', { error: err, channel_id: channel.id });
+    return interaction.editReply('Failed to read messages from that channel.');
+  }
+
+  if (messages.length === 0) {
+    return interaction.editReply('No messages found in that channel.');
+  }
+
+  const { rows: parsed, unparsed, total } = aggregateBirthdayMessages(messages, {});
+  const dbRows = parsed.map((r) => ({
+    guild_id: interaction.guildId,
+    user_id: r.user_id,
+    username: r.username,
+    month: r.month,
+    day: r.day,
+    birthday_public: true,
+    region,
+  }));
+
+  const files = [];
+  if (unparsed.length > 0) {
+    const lines = unparsed.map((u) => `[${u.author}] ${u.content}`).join('\n');
+    files.push(
+      new AttachmentBuilder(Buffer.from(lines, 'utf8'), { name: 'birthday-import-unparsed.txt' })
+    );
+  }
+
+  if (dryRun) {
+    const sample = dbRows
+      .slice()
+      .sort((a, b) => a.month - b.month || a.day - b.day)
+      .slice(0, 15)
+      .map((r) => `• ${String(r.month).padStart(2, '0')}/${String(r.day).padStart(2, '0')} — ${r.username ?? r.user_id}`)
+      .join('\n');
+    const summary = [
+      '**Channel Import — Dry Run**',
+      `Scanned: ${total} messages${truncated ? ' (truncated at limit)' : ''}`,
+      `Parsed unique users: ${dbRows.length}`,
+      `Unparsed messages: ${unparsed.length}`,
+      `Region: ${regionLabel(region)}`,
+      sample ? `\nSample:\n${sample}` : '',
+    ].filter(Boolean).join('\n');
+    return interaction.editReply({ content: summary, files });
+  }
+
+  let inserted = 0;
+  let skipped = 0;
+  try {
+    const r = await bulkInsertBirthdays(dbRows, { overwrite });
+    inserted = r.inserted;
+    skipped = r.skipped;
+  } catch (err) {
+    logger.error('Channel import: bulk insert failed', { error: err });
+    return interaction.editReply('Import failed while writing to the database.');
+  }
+
+  const summary = [
+    '**Channel Import Complete**',
+    `Channel: <#${channel.id}>`,
+    `Scanned: ${total} messages${truncated ? ' (truncated at limit)' : ''}`,
+    `Successful Imports: ${inserted}`,
+    `Skipped Duplicates: ${skipped}`,
+    `Unparsed messages: ${unparsed.length}`,
+    `Region: ${regionLabel(region)}`,
+  ].join('\n');
+
+  await auditLog(
+    interaction,
+    `${interaction.user.tag} ran channel import on #${channel.name} — ${inserted} added, ${skipped} skipped, ${unparsed.length} unparsed.`
+  );
 
   return interaction.editReply({ content: summary, files });
 }
