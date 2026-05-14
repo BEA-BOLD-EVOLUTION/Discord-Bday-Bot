@@ -74,3 +74,55 @@ create table if not exists scheduler_runs (
 
 create index if not exists scheduler_runs_ran_at_idx on scheduler_runs (ran_at desc);
 alter table scheduler_runs add column if not exists region text;
+
+-- Cross-process advisory lock table. Used by the scheduler so that if the bot
+-- is ever run in more than one container/process at once, the same regional
+-- run can't fire twice on the same day. A lease has a TTL — if a holder
+-- crashes without releasing, the next caller after expiry can take over.
+create table if not exists process_locks (
+  lock_key text primary key,
+  owner text not null,
+  acquired_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+
+create or replace function try_acquire_lock(
+  p_key text,
+  p_owner text,
+  p_ttl_seconds integer
+) returns boolean
+language plpgsql
+as $$
+declare
+  v_now timestamptz := now();
+  v_expires timestamptz := v_now + make_interval(secs => p_ttl_seconds);
+begin
+  -- Take or replace an expired lease in one atomic step.
+  insert into process_locks (lock_key, owner, acquired_at, expires_at)
+  values (p_key, p_owner, v_now, v_expires)
+  on conflict (lock_key) do update
+    set owner = excluded.owner,
+        acquired_at = excluded.acquired_at,
+        expires_at = excluded.expires_at
+    where process_locks.expires_at < v_now;
+
+  -- We won iff the row now belongs to us.
+  return exists (
+    select 1 from process_locks
+    where lock_key = p_key and owner = p_owner
+  );
+end;
+$$;
+
+create or replace function release_lock(
+  p_key text,
+  p_owner text
+) returns boolean
+language plpgsql
+as $$
+begin
+  delete from process_locks
+  where lock_key = p_key and owner = p_owner;
+  return found;
+end;
+$$;

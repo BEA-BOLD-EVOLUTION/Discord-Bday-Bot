@@ -191,6 +191,29 @@ export async function getLastSchedulerRun() {
   return data ?? null;
 }
 
+// ---------- cross-process advisory locks ----------
+
+// Attempts to acquire a leased lock named `key` for `ownerId`. Returns true
+// if this caller now holds the lock, false if another live owner holds it.
+// `ttlSeconds` is the lease lifetime — a crashed owner's lock auto-expires.
+export async function tryAcquireDbLock(key, ownerId, ttlSeconds) {
+  const { data, error } = await supabase.rpc('try_acquire_lock', {
+    p_key: key,
+    p_owner: ownerId,
+    p_ttl_seconds: ttlSeconds,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+export async function releaseDbLock(key, ownerId) {
+  const { error } = await supabase.rpc('release_lock', {
+    p_key: key,
+    p_owner: ownerId,
+  });
+  if (error) throw error;
+}
+
 // ---------- counts / debug helpers ----------
 
 export async function countBirthdaysForGuild(guildId) {

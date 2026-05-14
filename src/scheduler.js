@@ -15,7 +15,7 @@ import { formatZodiac, zodiacFor } from './utils/zodiac.js';
 import { fetchDailyHoroscope, horoscopeEnabled, threadsEnabled } from './utils/horoscope.js';
 import { nextRunAt } from './utils/cron.js';
 import { REGIONS, REGION_BY_ID, regionLabel } from './regions.js';
-import { withLock } from './utils/locks.js';
+import { withLock, withDbLock } from './utils/locks.js';
 
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -82,6 +82,11 @@ export async function runDailyJob(client, options = {}) {
 
   // Serialize concurrent invocations of the same region (cron + manual
   // trigger overlap, or a slow run lingering past the next cron tick).
+  // Two layers:
+  //   1. withDbLock — cross-process lease (defends against running >1 bot
+  //      replica). TTL is generous (15 min) so a crashed run eventually
+  //      releases. Falls open if the DB lock table is unreachable.
+  //   2. withLock — in-process mutex, cheap and instant.
   // Tests are allowed to run in parallel with the real schedule because
   // they target a specific guild and skip DB reads. Single-guild manual
   // runs from a debug button also bypass the lock — they're rare and
@@ -89,7 +94,17 @@ export async function runDailyJob(client, options = {}) {
   const lockKey = `scheduler:${regionId}`;
   const skipLock = isTest || !!options.guildId;
   if (!skipLock) {
-    const r = await withLock(lockKey, () => _runDailyJobInner(client, options));
+    const dbR = await withDbLock(lockKey, 15 * 60, () =>
+      withLock(lockKey, () => _runDailyJobInner(client, options)),
+    );
+    if (!dbR.acquired) {
+      logger.warn('birthday_scheduler_skipped_overlap', {
+        region: regionId,
+        reason: 'another process holds the scheduler lease',
+      });
+      return lastRunByRegion.get(regionId) ?? null;
+    }
+    const r = dbR.result;
     if (!r.acquired) {
       logger.warn('birthday_scheduler_skipped_overlap', {
         region: regionId,
