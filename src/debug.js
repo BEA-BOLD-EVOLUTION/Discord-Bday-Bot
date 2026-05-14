@@ -37,6 +37,32 @@ function elementColor(element) {
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
+// Mirrors scheduler.js: prefer nickname > server displayName > global > username.
+function pickDisplayName(member, fallback) {
+  if (!member) return fallback ?? 'Unknown';
+  return (
+    member.nickname ||
+    member.displayName ||
+    member.user?.globalName ||
+    member.user?.username ||
+    fallback ||
+    'Unknown'
+  );
+}
+
+function escapeMd(s) {
+  return String(s).replace(/([*_`~|\\>])/g, '\\$1');
+}
+
+async function resolveDisplayNames(guild, rows) {
+  const out = [];
+  for (const r of rows) {
+    const member = await guild.members.fetch(r.user_id).catch(() => null);
+    out.push({ ...r, displayName: pickDisplayName(member, r.username ?? 'Member') });
+  }
+  return out;
+}
+
 // Build the state object that buildDebugPanel renders.
 export async function buildDebugState(interaction) {
   const settings = await getGuildSettings(interaction.guildId);
@@ -227,9 +253,10 @@ async function onCatchUpMonth(interaction) {
     return interaction.editReply('Announcement channel is missing or inaccessible.');
   }
 
-  const lines = missed.map((r) => {
+  const missedNamed = await resolveDisplayNames(interaction.guild, missed);
+  const lines = missedNamed.map((r) => {
     const z = formatZodiac(r.month, r.day);
-    const base = `• <@${r.user_id}> — ${formatBirthday(r.month, r.day)}`;
+    const base = `• ${escapeMd(r.displayName)} — ${formatBirthday(r.month, r.day)}`;
     return z ? `${base} · ${z}` : base;
   });
   const content = [
@@ -243,8 +270,8 @@ async function onCatchUpMonth(interaction) {
   try {
     sentMessage = await channel.send({
       content,
-      // Ping the honorees so they actually see it.
-      allowedMentions: { users: missed.map((r) => r.user_id) },
+      // Display names only — no @mention pings to avoid notification spam.
+      allowedMentions: { parse: [] },
     });
   } catch (err) {
     logger.error('Catch-up announcement send failed', { guild_id: interaction.guildId, error: err });
@@ -258,15 +285,17 @@ async function onCatchUpMonth(interaction) {
   if (sentMessage && horoscopeEnabled()) {
     // Group missed birthdays by zodiac sign id so each sign gets exactly
     // one horoscope embed, listing whose belated birthday it covers.
-    const bySign = new Map();
-    for (const r of missed) {
+    // Use the name-resolved list so the embed "For" field shows display
+    // names instead of <@id> mentions.
+    const bySignNamed = new Map();
+    for (const r of missedNamed) {
       const sign = zodiacFor(r.month, r.day);
       if (!sign) continue;
-      if (!bySign.has(sign.id)) bySign.set(sign.id, { sign, members: [] });
-      bySign.get(sign.id).members.push(r);
+      if (!bySignNamed.has(sign.id)) bySignNamed.set(sign.id, { sign, members: [] });
+      bySignNamed.get(sign.id).members.push(r);
     }
 
-    if (bySign.size > 0) {
+    if (bySignNamed.size > 0) {
       let target = channel;
       if (threadsEnabled() && typeof sentMessage.startThread === 'function') {
         const thread = await sentMessage
@@ -285,12 +314,12 @@ async function onCatchUpMonth(interaction) {
         if (thread) target = thread;
       }
 
-      for (const { sign, members } of bySign.values()) {
+      for (const { sign, members } of bySignNamed.values()) {
         try {
           const text = await fetchDailyHoroscope(sign.id, todayIso);
           if (!text) continue;
           const who = members
-            .map((m) => `<@${m.user_id}> (${formatBirthday(m.month, m.day)})`)
+            .map((m) => `${escapeMd(m.displayName)} (${formatBirthday(m.month, m.day)})`)
             .join(', ');
           const embed = new EmbedBuilder()
             .setTitle(`${sign.emoji} Today's ${sign.name} Horoscope`)
@@ -300,7 +329,9 @@ async function onCatchUpMonth(interaction) {
             .setColor(elementColor(sign.element));
           await target.send({
             embeds: [embed],
-            allowedMentions: { users: members.map((m) => m.user_id) },
+            // Users were already pinged in the belated header message;
+            // suppress mentions here so the horoscope embed doesn't re-ping.
+            allowedMentions: { parse: [] },
           });
         } catch (err) {
           logger.warn('Failed to send catch-up horoscope embed', {
@@ -358,9 +389,12 @@ async function onBelatedHoroscopes(interaction) {
     return interaction.editReply('Announcement channel is missing or inaccessible.');
   }
 
+  // Resolve display names so embeds show names instead of <@id> mentions.
+  const rowsNamed = await resolveDisplayNames(interaction.guild, rows);
+
   // Group by zodiac sign.
   const bySign = new Map();
-  for (const r of rows) {
+  for (const r of rowsNamed) {
     const sign = zodiacFor(r.month, r.day);
     if (!sign) continue;
     if (!bySign.has(sign.id)) bySign.set(sign.id, { sign, members: [] });
@@ -411,7 +445,7 @@ async function onBelatedHoroscopes(interaction) {
         continue;
       }
       const who = members
-        .map((m) => `<@${m.user_id}> (${formatBirthday(m.month, m.day)})`)
+        .map((m) => `${escapeMd(m.displayName)} (${formatBirthday(m.month, m.day)})`)
         .join(', ');
       const embed = new EmbedBuilder()
         .setTitle(`${sign.emoji} Today's ${sign.name} Horoscope`)
@@ -421,7 +455,8 @@ async function onBelatedHoroscopes(interaction) {
         .setColor(elementColor(sign.element));
       await target.send({
         embeds: [embed],
-        allowedMentions: { users: members.map((m) => m.user_id) },
+        // Header already announces who this is for; don't re-ping in the embed.
+        allowedMentions: { parse: [] },
       });
       posted++;
     } catch (err) {
