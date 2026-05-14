@@ -2,6 +2,8 @@
 // JSON output is enabled when LOG_FORMAT=json so production hosts can ship
 // logs to a centralized aggregator. Secrets are redacted before emission.
 
+import { inspect } from 'node:util';
+
 const JSON_MODE = process.env.LOG_FORMAT === 'json';
 const DEBUG = !!process.env.DEBUG;
 
@@ -74,17 +76,24 @@ function emit(level, message, fields = {}) {
   }
 
   if (JSON_MODE) {
-    const line = JSON.stringify(record);
-    if (level === 'error') console.error(line);
-    else if (level === 'warn') console.warn(line);
-    else console.log(line);
+    const line = JSON.stringify(record) + '\n';
+    // Single write per record → no interleaving between concurrent calls.
+    if (level === 'error') process.stderr.write(line);
+    else process.stdout.write(line);
     return;
   }
+  // Text mode: also emit each record as a single write so concurrent
+  // logger calls can't interleave their field dumps on stdout/stderr.
+  // util.inspect with breakLength:Infinity + compact:true keeps the
+  // fields on one line, which is what you want for grep anyway.
   const prefix = `[${record.timestamp}] [${level}]`;
-  const extra = Object.keys(safeFields).length ? safeFields : '';
-  if (level === 'error') console.error(prefix, record.message, extra);
-  else if (level === 'warn') console.warn(prefix, record.message, extra);
-  else console.log(prefix, record.message, extra);
+  const hasFields = Object.keys(safeFields).length > 0;
+  const extra = hasFields
+    ? ' ' + inspect(safeFields, { depth: 5, breakLength: Infinity, compact: true, colors: false })
+    : '';
+  const line = `${prefix} ${record.message}${extra}\n`;
+  if (level === 'error' || level === 'warn') process.stderr.write(line);
+  else process.stdout.write(line);
 }
 
 export const logger = {
