@@ -256,6 +256,25 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
   // Resolve display names + claim announcements before composing the consolidated message.
   const announceable = [];
   for (const row of rows) {
+    // Skip rows for users who are no longer a member of this guild. This
+    // prevents announcing for ex-members whose birthday row was left behind
+    // when they left the server. Fetch the member BEFORE claiming the
+    // announcement slot so the claim isn't consumed by a no-op; if they
+    // rejoin later the next scheduled run can still pick them up.
+    // In test mode we keep the synthetic row regardless so admins can preview.
+    let member = null;
+    if (!isTest) {
+      member = await guild.members.fetch(row.user_id).catch(() => null);
+      if (!member) {
+        logger.info('Skipping birthday for non-member', {
+          guild_id: guildId,
+          user_id: row.user_id,
+          username: row.username ?? null,
+        });
+        continue;
+      }
+    }
+
     if (!isTest) {
       let claimed = false;
       try {
@@ -270,7 +289,6 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
         continue;
       }
     }
-    const member = await guild.members.fetch(row.user_id).catch(() => null);
     announceable.push({
       ...row,
       displayName: pickDisplayName(member, row.username ?? 'Member'),

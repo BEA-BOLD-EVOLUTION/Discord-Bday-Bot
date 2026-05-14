@@ -54,10 +54,20 @@ function escapeMd(s) {
   return String(s).replace(/([*_`~|\\>])/g, '\\$1');
 }
 
+// Resolves display names and drops rows whose user is no longer a member
+// of the guild — we don't want to announce/list ex-members.
 async function resolveDisplayNames(guild, rows) {
   const out = [];
   for (const r of rows) {
     const member = await guild.members.fetch(r.user_id).catch(() => null);
+    if (!member) {
+      logger.info('Skipping non-member during display name resolution', {
+        guild_id: guild.id,
+        user_id: r.user_id,
+        username: r.username ?? null,
+      });
+      continue;
+    }
     out.push({ ...r, displayName: pickDisplayName(member, r.username ?? 'Member') });
   }
   return out;
@@ -223,10 +233,24 @@ async function onCatchUpMonth(interaction) {
   }
 
   // Claim each (guild, user, original-date). Anyone already claimed
-  // (already announced on their actual day) is skipped.
+  // (already announced on their actual day) is skipped. Also skip rows
+  // for users who are no longer a member of this guild so we don't
+  // announce ex-members. Membership is checked BEFORE the claim so the
+  // slot isn't consumed by a skipped row.
   const missed = [];
   let alreadyAnnounced = 0;
+  let nonMembers = 0;
   for (const row of candidates) {
+    const stillMember = await interaction.guild.members.fetch(row.user_id).catch(() => null);
+    if (!stillMember) {
+      nonMembers++;
+      logger.info('Skipping catch-up for non-member', {
+        guild_id: interaction.guildId,
+        user_id: row.user_id,
+        username: row.username ?? null,
+      });
+      continue;
+    }
     const dd = String(row.day).padStart(2, '0');
     const isoForRow = `${year}-${mm}-${dd}`;
     let claimed = false;
