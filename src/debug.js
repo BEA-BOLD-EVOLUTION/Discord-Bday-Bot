@@ -279,7 +279,7 @@ async function onCatchUpMonth(interaction) {
 
   const missedNamed = await resolveDisplayNames(interaction.guild, missed);
   const lines = missedNamed.map(
-    (r) => `• ${escapeMd(r.displayName)} — ${formatBirthday(r.month, r.day)}`
+    (r) => `• <@${r.user_id}> — ${formatBirthday(r.month, r.day)}`
   );
   // All belated birthdays in this batch fall within the same calendar month,
   // so they typically share a zodiac sign. If the batch happens to straddle
@@ -300,8 +300,9 @@ async function onCatchUpMonth(interaction) {
   try {
     sentMessage = await channel.send({
       content,
-      // Display names only — no @mention pings to avoid notification spam.
-      allowedMentions: { parse: [] },
+      // Ping exactly the belated birthday people so they get notified, without
+      // allowing @everyone/@here or role pings to leak through.
+      allowedMentions: { users: missedNamed.map((r) => r.user_id) },
     });
   } catch (err) {
     logger.error('Catch-up announcement send failed', { guild_id: interaction.guildId, error: err });

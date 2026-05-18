@@ -221,23 +221,6 @@ async function _runDailyJobInner(client, options = {}) {
   return lastRunSummary;
 }
 
-// Pick the best display name for a member: nickname > global display name > username.
-function pickDisplayName(member, fallback) {
-  if (!member) return fallback ?? 'Unknown';
-  return (
-    member.nickname ||
-    member.displayName ||
-    member.user?.globalName ||
-    member.user?.username ||
-    fallback ||
-    'Unknown'
-  );
-}
-
-function escapeMd(s) {
-  return String(s).replace(/([*_`~|\\>])/g, '\\$1');
-}
-
 // Embed accent color keyed to the zodiac element — a tiny visual touch that
 // no other birthday bot does. Falls back to the default pink on unknown
 // elements.
@@ -300,7 +283,6 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
     }
     announceable.push({
       ...row,
-      displayName: pickDisplayName(member, row.username ?? 'Member'),
       _member: member,
     });
   }
@@ -316,7 +298,7 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
       logger.warn('Announcement channel missing/inaccessible', { guild_id: guildId });
     } else {
       const lines = announceable.map(
-        (a) => `• ${escapeMd(a.displayName)}`
+        (a) => `• <@${a.user_id}>`
       );
       // Everyone announced today shares the same birthday (and therefore the
       // same zodiac sign), so put the sign once in the header rather than
@@ -333,8 +315,9 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
       try {
         sentMessage = await channel.send({
           content,
-          // Display names only — no @mention pings to avoid notification spam.
-          allowedMentions: { parse: [] },
+          // Ping exactly the birthday people so they get notified, without
+          // allowing @everyone/@here or role pings to leak through.
+          allowedMentions: { users: announceable.map((a) => a.user_id) },
         });
         sub.announcements_sent = announceable.length;
       } catch (err) {
