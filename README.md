@@ -37,6 +37,9 @@ the member's zodiac sign.
   - `/birthday-import-channel` — backfill birthdays by scanning a historical channel of free-text submissions (handles the messy real-world formats: `MM/DD`, `DD/MM`, `M-D`, `Month Day`, `/set`-prefixed, ordinal suffixes, etc.; latest message per author wins)
   - `/birthday-view` — view your (or any member's, for admins) saved birthday
   - `/birthday-debug` — admin debug panel: Test Announcement, Test Role, Check Today, **Catch Up Missed (this month)**, **Post Belated Horoscopes**, Check Permissions, View Errors, Rebuild Panel
+  - `/birthday-export-calendar` — download this server's birthdays as an `.ics` file to import into Google Calendar, Apple Calendar, or Outlook
+  - `/birthday-calendar-feed` — get a subscribe-by-URL `.ics` link that auto-refreshes (set `regenerate: true` to revoke and replace it)
+- 🗓 **Calendar export & live subscription** — push birthdays into any calendar app as all-day, yearly-recurring events (with zodiac in the title). One-time `.ics` download _or_ an auto-syncing subscription feed
 - 📒 Optional audit log channel for admin imports
 
 ## Stack
@@ -163,6 +166,52 @@ exampleuser,4,16
 `discord_user_id` is preferred and more reliable. By default existing
 entries are **skipped**; pass `overwrite: true` to replace them.
 
+## Calendar export & subscription
+
+Birthdays can be pushed into Google Calendar, Apple Calendar / iCal, or Outlook
+as **all-day, yearly-recurring events** (the event title includes the member's
+zodiac sign). Only **public** birthdays are included — anything marked private
+is never written to a calendar. The format is standard
+[iCalendar](https://datatracker.ietf.org/doc/html/rfc5545) (`.ics`), so the same
+output works everywhere.
+
+There are two ways to use it:
+
+### 1. One-time download — `/birthday-export-calendar`
+
+Generates an `.ics` file you import once. No setup, no public URL.
+
+- **Google Calendar** (web): ⚙ Settings → Import & export → Import
+- **Apple Calendar**: File → Import… (or open the file on iPhone/iPad)
+- **Outlook**: File → Open & Export → Import/Export → import an iCalendar (.ics)
+
+It's a snapshot — re-run the command to refresh after birthdays change.
+
+### 2. Live subscription feed — `/birthday-calendar-feed`
+
+Returns a private, unguessable URL that calendar apps **subscribe** to and
+refresh automatically — no re-importing when birthdays change.
+
+- **Google Calendar** (web): Other calendars → ＋ → From URL
+- **Apple Calendar**: File → New Calendar Subscription… (or tap the `webcal://` link)
+- **Outlook**: Add calendar → Subscribe from web
+
+The feed is served by a small built-in HTTP server, so the bot's host must
+expose a public port and you must set two things up:
+
+1. **Re-run the schema** ([sql/schema.sql](sql/schema.sql) is idempotent) to add
+   the `calendar_feeds` table.
+2. Set `CALENDAR_PUBLIC_URL` to the bot's public base URL (e.g.
+   `https://your-bot.up.railway.app`) so the command can print a full link. On
+   Railway, expose the service and use the generated domain; the listen port
+   comes from `PORT` (injected automatically) and falls back to `8080`.
+
+The feed URL contains a random token and lists the server's public birthdays —
+**keep it private**. Re-run with `regenerate: true` to revoke the old link and
+issue a new one. To disable the feed server entirely, set
+`CALENDAR_FEED_ENABLED=false` (the one-time download still works). The server
+also answers `GET /healthz` for platform health checks.
+
 ## Scheduler
 
 Four cron jobs fire daily, one per region, all anchored to UTC so the schedule
@@ -227,6 +276,9 @@ Any Node **22+** host works. Railway is recommended:
 2. Add the env vars from `.env.example`.
 3. Set the start command to `npm start`.
 4. Add a one-off `npm run register` deploy step (or run locally once).
+5. _(Optional, for the live calendar feed)_ Expose the service to get a public
+   domain, then set `CALENDAR_PUBLIC_URL` to it. The feed server listens on the
+   platform-provided `PORT`. Set `CALENDAR_FEED_ENABLED=false` to skip it.
 
 ### Logging
 
@@ -254,3 +306,6 @@ The last ~50 error/warn records are also kept in-memory and viewable via the
   server-configurable admin role.
 - The Supabase **service role key** is required server-side and must
   never be exposed to clients.
+- The calendar subscription feed is protected by a random per-server token in
+  the URL and only ever exposes **public** birthdays (month/day, no year). Treat
+  the link like a secret; `/birthday-calendar-feed regenerate:true` revokes it.

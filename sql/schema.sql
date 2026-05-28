@@ -139,3 +139,15 @@ create table if not exists horoscope_threads (
 );
 
 create index if not exists horoscope_threads_created_at_idx on horoscope_threads (created_at);
+
+-- Per-guild iCalendar feed tokens. A guild that opts into the live calendar
+-- subscription feed (/birthday-calendar-feed) gets one random token; the
+-- public .ics HTTP endpoint is keyed by this token so the URL is unguessable
+-- and revocable (regenerating issues a new token, invalidating the old link).
+create table if not exists calendar_feeds (
+  guild_id text primary key,
+  token text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists calendar_feeds_token_idx on calendar_feeds (token);
