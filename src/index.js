@@ -4,6 +4,7 @@ import { logger } from './logger.js';
 import { handleInteraction } from './interactions.js';
 import { handleCommand } from './commands.js';
 import { startScheduler } from './scheduler.js';
+import { startCalendarServer } from './calendarFeed.js';
 import { runStartupHealthCheck } from './healthcheck.js';
 import { ensureBirthdayClubChannel, ensureBirthdayRole, ensureBotPermsOnConfiguredChannels } from './onboarding.js';
 import { installAlertNotifier } from './alerts.js';
@@ -17,6 +18,7 @@ client.once(Events.ClientReady, async (c) => {
   logger.info('discord_ready', { tag: c.user.tag, id: c.user.id });
   installAlertNotifier(c);
   startScheduler(client);
+  startCalendarServer(client);
   runStartupHealthCheck(client).catch((err) =>
     logger.error('Startup health check failed', { error: err })
   );

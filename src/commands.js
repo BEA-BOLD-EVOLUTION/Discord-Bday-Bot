@@ -5,7 +5,9 @@ import {
   ChannelType,
   AttachmentBuilder,
 } from 'discord.js';
+import { randomBytes } from 'node:crypto';
 import { buildPanelMessage, buildConfigPanel } from './ui.js';
+import { config } from './config.js';
 import {
   getGuildSettings,
   updateGuildSettings,
@@ -13,7 +15,11 @@ import {
   getBirthday,
   bulkInsertBirthdays,
   deleteBirthday,
+  getGuildPublicBirthdays,
+  getCalendarFeed,
+  upsertCalendarFeed,
 } from './db.js';
+import { buildBirthdayIcs } from './utils/ics.js';
 import { MONTHS, daysInMonth, isValidDate, formatBirthday } from './utils/dates.js';
 import { formatZodiac } from './utils/zodiac.js';
 import { isAdmin } from './utils/permissions.js';
@@ -175,6 +181,23 @@ export const commandDefinitions = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDMPermission(false)
     .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('birthday-export-calendar')
+    .setDescription("Admin: export this server's birthdays as an .ics file (Google/Apple/Outlook).")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDMPermission(false)
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('birthday-calendar-feed')
+    .setDescription('Admin: get a subscribe-by-URL calendar link that stays in sync automatically.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDMPermission(false)
+    .addBooleanOption((o) =>
+      o.setName('regenerate').setDescription('Issue a new link and revoke the previous one.')
+    )
+    .toJSON(),
 ];
 
 // ---------- Dispatcher ----------
@@ -193,6 +216,8 @@ export async function handleCommand(interaction) {
     if (name === 'birthday-view') return await cmdView(interaction);
     if (name === 'birthday-remove-for') return await cmdRemoveFor(interaction);
     if (name === 'birthday-debug') return await cmdDebug(interaction);
+    if (name === 'birthday-export-calendar') return await cmdExportCalendar(interaction);
+    if (name === 'birthday-calendar-feed') return await cmdCalendarFeed(interaction);
   } catch (err) {
     logger.error('Command error', { command: name, guild_id: interaction.guildId, user_id: interaction.user?.id, error: err });
     const msg = 'Something went wrong running that command.';
@@ -642,6 +667,114 @@ async function cmdRemoveFor(interaction) {
     content: `🗑 Removed birthday for <@${member.id}>.`,
     ...EPHEMERAL,
   });
+}
+
+function resolveDisplayName(guild, row) {
+  return guild?.members?.cache?.get(row.user_id)?.displayName || row.username || row.user_id;
+}
+
+function slugifyGuildName(name) {
+  return (
+    (name ?? 'server')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'server'
+  );
+}
+
+async function cmdExportCalendar(interaction) {
+  if (!(await isAdmin(interaction))) {
+    return interaction.reply({ content: 'You do not have permission to do that.', ...EPHEMERAL });
+  }
+  await interaction.deferReply(EPHEMERAL);
+
+  const rows = await getGuildPublicBirthdays(interaction.guildId);
+  if (rows.length === 0) {
+    return interaction.editReply('No public birthdays saved yet — nothing to export.');
+  }
+
+  const guild = interaction.guild;
+  const birthdays = rows.map((r) => ({
+    guild_id: r.guild_id,
+    user_id: r.user_id,
+    username: r.username,
+    displayName: resolveDisplayName(guild, r),
+    month: r.month,
+    day: r.day,
+    region: r.region,
+  }));
+
+  const calendarName = `${guild?.name ?? 'Server'} Birthdays`;
+  const ics = buildBirthdayIcs({ calendarName, birthdays });
+  const file = new AttachmentBuilder(Buffer.from(ics, 'utf8'), {
+    name: `${slugifyGuildName(guild?.name)}-birthdays.ics`,
+  });
+
+  const summary = [
+    `🗓 **Calendar export ready** — ${birthdays.length} birthday${birthdays.length === 1 ? '' : 's'}.`,
+    'Import this `.ics` into any calendar app:',
+    '• **Google Calendar** (web): ⚙ Settings → Import & export → Import.',
+    '• **Apple Calendar**: File → Import… (or just open the file on iPhone/iPad).',
+    '• **Outlook**: File → Open & Export → Import/Export → import an iCalendar (.ics).',
+    '_Want an always-in-sync calendar instead of a one-time import? Use_ `/birthday-calendar-feed`.',
+  ].join('\n');
+
+  return interaction.editReply({ content: summary, files: [file] });
+}
+
+async function cmdCalendarFeed(interaction) {
+  if (!(await isAdmin(interaction))) {
+    return interaction.reply({ content: 'You do not have permission to do that.', ...EPHEMERAL });
+  }
+  await interaction.deferReply(EPHEMERAL);
+
+  const regenerate = interaction.options.getBoolean('regenerate') ?? false;
+
+  let feed = await getCalendarFeed(interaction.guildId);
+  if (!feed || regenerate) {
+    const token = randomBytes(24).toString('base64url');
+    await upsertCalendarFeed(interaction.guildId, token);
+    feed = { guild_id: interaction.guildId, token };
+    logger.info('calendar_feed_token_issued', {
+      guild_id: interaction.guildId,
+      actor_id: interaction.user.id,
+      regenerated: regenerate,
+    });
+  }
+
+  if (!config.calendar.enabled) {
+    return interaction.editReply(
+      'The live calendar feed is disabled on this bot (`CALENDAR_FEED_ENABLED=false`). ' +
+        'Use `/birthday-export-calendar` for a downloadable file instead.'
+    );
+  }
+  if (!config.calendar.publicUrl) {
+    return interaction.editReply(
+      'A subscription token is saved, but this bot has no public URL configured yet. ' +
+        'Ask the bot host to set `CALENDAR_PUBLIC_URL` (e.g. `https://your-bot.up.railway.app`), then re-run this command. ' +
+        'Meanwhile, `/birthday-export-calendar` gives you a downloadable file.'
+    );
+  }
+
+  const feedUrl = `${config.calendar.publicUrl}/calendar/${feed.token}.ics`;
+  const webcalUrl = feedUrl.replace(/^https?:\/\//, 'webcal://');
+
+  const lines = ['🔗 **Your live birthday calendar feed**'];
+  if (regenerate) lines.push('_A new link was generated — the previous one no longer works._');
+  lines.push(
+    '',
+    `\`${feedUrl}\``,
+    '',
+    'Subscribe once and it auto-refreshes — no re-importing:',
+    '• **Google Calendar** (web): Other calendars → ＋ → From URL → paste the link.',
+    '• **Apple Calendar**: File → New Calendar Subscription… → paste the link.',
+    `• **One tap on iPhone/Mac**: ${webcalUrl}`,
+    '• **Outlook**: Add calendar → Subscribe from web → paste the link.',
+    '',
+    "⚠️ Anyone with this link can see this server's public birthdays — keep it private. Re-run with `regenerate: true` to revoke and replace it."
+  );
+
+  return interaction.editReply(lines.join('\n'));
 }
 
 // ---------- helpers ----------

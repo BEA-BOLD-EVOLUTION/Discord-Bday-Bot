@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # npm dependencies (the bot itself).
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Batch low-risk updates into single PRs to cut review noise; majors stay
+      # separate so breaking bumps (e.g. node-cron) get their own review.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Keep the GitHub Actions used in workflows patched too.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

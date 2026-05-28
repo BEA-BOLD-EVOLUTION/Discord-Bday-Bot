@@ -66,6 +66,21 @@ export async function getBirthdaysForRegion(month, day, region) {
   return data ?? [];
 }
 
+// All public birthdays for a guild, ordered by calendar date. Used to build the
+// iCalendar export / live feed. Private (birthday_public = false) rows are
+// intentionally excluded so they never leak into an exported calendar.
+export async function getGuildPublicBirthdays(guildId) {
+  const { data, error } = await supabase
+    .from('birthdays')
+    .select('*')
+    .eq('guild_id', guildId)
+    .eq('birthday_public', true)
+    .order('month', { ascending: true })
+    .order('day', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
 // Birthdays in a guild for a given month, with day in [minDay, maxDay].
 // Used by the "catch up missed birthdays this month" admin debug action.
 export async function getGuildBirthdaysInMonthRange(guildId, month, minDay, maxDay) {
@@ -239,6 +254,40 @@ export async function releaseDbLock(key, ownerId) {
     p_key: key,
     p_owner: ownerId,
   });
+  if (error) throw error;
+}
+
+// ---------- calendar feed tokens ----------
+
+export async function getCalendarFeed(guildId) {
+  const { data, error } = await supabase
+    .from('calendar_feeds')
+    .select('*')
+    .eq('guild_id', guildId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+export async function getCalendarFeedByToken(token) {
+  const { data, error } = await supabase
+    .from('calendar_feeds')
+    .select('*')
+    .eq('token', token)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+// Creates the feed row, or replaces the token when an admin regenerates it
+// (which revokes the previous subscription URL).
+export async function upsertCalendarFeed(guildId, token) {
+  const { error } = await supabase
+    .from('calendar_feeds')
+    .upsert(
+      { guild_id: guildId, token, created_at: new Date().toISOString() },
+      { onConflict: 'guild_id' }
+    );
   if (error) throw error;
 }
 
