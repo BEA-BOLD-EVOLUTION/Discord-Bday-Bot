@@ -11,6 +11,9 @@ export const config = {
     token: required('DISCORD_TOKEN'),
     clientId: required('DISCORD_CLIENT_ID'),
     devGuildId: process.env.DISCORD_DEV_GUILD_ID?.trim() || null,
+    // Opt-in: (re)register slash commands automatically on startup so a redeploy
+    // keeps Discord in sync without a separate `npm run register` step.
+    registerOnBoot: process.env.REGISTER_ON_BOOT === 'true',
   },
   supabase: {
     url: required('SUPABASE_URL'),

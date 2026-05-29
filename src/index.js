@@ -8,6 +8,7 @@ import { startCalendarServer } from './calendarFeed.js';
 import { runStartupHealthCheck } from './healthcheck.js';
 import { ensureBirthdayClubChannel, ensureBirthdayRole, ensureBotPermsOnConfiguredChannels } from './onboarding.js';
 import { installAlertNotifier } from './alerts.js';
+import { registerCommands } from './scripts/registerCommands.js';
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
@@ -17,6 +18,11 @@ const client = new Client({
 client.once(Events.ClientReady, async (c) => {
   logger.info('discord_ready', { tag: c.user.tag, id: c.user.id });
   installAlertNotifier(c);
+  if (config.discord.registerOnBoot) {
+    registerCommands().catch((err) =>
+      logger.error('Boot command registration failed', { error: err })
+    );
+  }
   startScheduler(client);
   startCalendarServer(client);
   runStartupHealthCheck(client).catch((err) =>
