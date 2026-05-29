@@ -266,6 +266,14 @@ export function buildConfigPanel(settings) {
         'Click the menus below to update settings. Changes save instantly.',
         '',
         settingsSummary(s),
+        '',
+        '**What each setting does**',
+        '• **Collection channel** — hosts the public Birthday Club panel where members save their birthday.',
+        '• **Announcement channel** — where the daily birthday shoutouts are posted.',
+        '• **Birthday role** — auto-assigned to members on their birthday, then removed the next day.',
+        '• **Admin role** — extra role (besides Manage Server) allowed to manage the bot.',
+        '• **Audit channel** — logs who ran bulk imports and the results.',
+        '• **Alert channel** — the bot auto-posts error/warning logs here so admins catch problems early.',
       ].join('\n')
     )
     .setColor(0x5865f2);

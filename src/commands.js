@@ -55,31 +55,31 @@ export const commandDefinitions = [
     .addChannelOption((o) =>
       o
         .setName('collection_channel')
-        .setDescription('Channel where the public birthday panel lives.')
+        .setDescription('Hosts the public Birthday Club panel where members save their birthday.')
         .addChannelTypes(ChannelType.GuildText)
     )
     .addChannelOption((o) =>
       o
         .setName('announcement_channel')
-        .setDescription('Channel where birthday announcements are posted.')
+        .setDescription('Where the daily birthday shoutouts are posted for everyone to see.')
         .addChannelTypes(ChannelType.GuildText)
     )
     .addRoleOption((o) =>
-      o.setName('birthday_role').setDescription('Role to assign to members on their birthday.')
+      o.setName('birthday_role').setDescription('Auto-assigned to members on their birthday, then removed the next day.')
     )
     .addRoleOption((o) =>
-      o.setName('admin_role').setDescription('Additional role allowed to manage the bot.')
+      o.setName('admin_role').setDescription('Extra role (besides Manage Server) allowed to run bot admin commands.')
     )
     .addChannelOption((o) =>
       o
         .setName('audit_channel')
-        .setDescription('Channel for admin import audit logs.')
+        .setDescription('Logs who ran bulk imports and the results, for admin record-keeping.')
         .addChannelTypes(ChannelType.GuildText)
     )
     .addChannelOption((o) =>
       o
         .setName('error_log_channel')
-        .setDescription('Alert channel: error/warning logs are auto-posted here for admins.')
+        .setDescription('Bot auto-posts error/warning logs here so admins catch problems early.')
         .addChannelTypes(ChannelType.GuildText)
     )
     .addBooleanOption((o) =>
