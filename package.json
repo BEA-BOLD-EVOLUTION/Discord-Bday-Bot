@@ -14,7 +14,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.4",
+    "@supabase/supabase-js": "^2.108.1",
     "cron-parser": "^4.9.0",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.5",
