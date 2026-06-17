@@ -200,7 +200,7 @@ export function buildDebugPanel(state) {
     `**Last scheduler run:** ${state.lastRun ? `${state.lastRun.ran_at} (${state.lastRun.was_test ? 'test' : 'real'})` : '_never_'}`,
     `**Last result:** ${
       state.lastRun
-        ? `found=${state.lastRun.birthdays_found} · sent=${state.lastRun.announcements_sent} · roles=${state.lastRun.roles_added} · errors=${state.lastRun.errors} · ${state.lastRun.duration_ms}ms`
+        ? `found=${state.lastRun.birthdays_found} · sent=${state.lastRun.announcements_sent} · roles=${state.lastRun.roles_added} · unverified=${state.lastRun.members_unverified ?? 0} · errors=${state.lastRun.errors} · ${state.lastRun.duration_ms}ms`
         : '_n/a_'
     }`,
     `**Next scheduler runs:**`,
