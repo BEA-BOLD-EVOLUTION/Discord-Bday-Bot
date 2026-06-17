@@ -136,7 +136,7 @@ async function _runDailyJobInner(client, options = {}) {
     target_guild: options.guildId ?? null,
   });
 
-  let totals = { birthdays_found: 0, announcements_sent: 0, roles_added: 0, errors: 0 };
+  let totals = { birthdays_found: 0, announcements_sent: 0, roles_added: 0, errors: 0, members_unverified: 0 };
 
   try {
     if (!isTest) {
@@ -193,6 +193,7 @@ async function _runDailyJobInner(client, options = {}) {
         totals.announcements_sent += sub.announcements_sent;
         totals.roles_added += sub.roles_added;
         totals.errors += sub.errors;
+        totals.members_unverified += sub.members_unverified;
       } catch (err) {
         totals.errors++;
         logger.error('Birthday processing failed for guild', { guild_id: guildId, region: region.id, error: err });
@@ -262,7 +263,7 @@ function elementColor(element) {
 }
 
 async function processGuildBirthdays(client, guildId, rows, isoDate, region, { isTest = false } = {}) {
-  const sub = { announcements_sent: 0, roles_added: 0, errors: 0 };
+  const sub = { announcements_sent: 0, roles_added: 0, errors: 0, members_unverified: 0 };
   const settings = await getGuildSettings(guildId);
   if (!settings) {
     logger.warn('No settings for guild; skipping announcements', { guild_id: guildId });
@@ -301,7 +302,7 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
       }
       member = fetched;
       if (!member) {
-        sub.errors++;
+        sub.members_unverified++;
         logger.warn('Announcing birthday despite unverified membership', {
           guild_id: guildId,
           user_id: row.user_id,

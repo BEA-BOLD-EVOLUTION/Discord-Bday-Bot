@@ -67,6 +67,9 @@ create table if not exists scheduler_runs (
   announcements_sent integer not null default 0,
   roles_added integer not null default 0,
   errors integer not null default 0,
+  -- Members whose guild membership couldn't be confirmed due to a transient
+  -- fetch failure (rate limit, 5xx, network) but who were still announced.
+  members_unverified integer not null default 0,
   duration_ms integer not null default 0,
   was_test boolean not null default false,
   notes text
@@ -74,6 +77,7 @@ create table if not exists scheduler_runs (
 
 create index if not exists scheduler_runs_ran_at_idx on scheduler_runs (ran_at desc);
 alter table scheduler_runs add column if not exists region text;
+alter table scheduler_runs add column if not exists members_unverified integer not null default 0;
 
 -- Cross-process advisory lock table. Used by the scheduler so that if the bot
 -- is ever run in more than one container/process at once, the same regional

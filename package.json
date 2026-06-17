@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "register": "node src/scripts/registerCommands.js",
-    "db:migrate": "node src/scripts/dbMigrate.js"
+    "db:migrate": "node src/scripts/dbMigrate.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=22"
