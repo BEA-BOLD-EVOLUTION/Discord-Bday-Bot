@@ -19,6 +19,7 @@ import { fetchDailyHoroscope, horoscopeEnabled, threadsEnabled } from './utils/h
 import { nextRunAt } from './utils/cron.js';
 import { REGIONS, REGION_BY_ID, regionLabel } from './regions.js';
 import { withLock, withDbLock } from './utils/locks.js';
+import { fetchMemberSafe } from './utils/membership.js';
 
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -280,16 +281,33 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
     // announcement slot so the claim isn't consumed by a no-op; if they
     // rejoin later the next scheduled run can still pick them up.
     // In test mode we keep the synthetic row regardless so admins can preview.
+    //
+    // Only a *confirmed* non-member (Discord "Unknown Member") is skipped. A
+    // transient fetch failure (rate limit, 5xx, network) leaves membership
+    // unknown — because the scheduler runs only once per region per day, we
+    // err on the side of still announcing (with the stored name, no ping/role
+    // since we lack the member object) rather than silently dropping a real
+    // member's birthday. The failure is logged so admins can see it.
     let member = null;
     if (!isTest) {
-      member = await guild.members.fetch(row.user_id).catch(() => null);
-      if (!member) {
+      const { member: fetched, gone } = await fetchMemberSafe(guild, row.user_id);
+      if (gone) {
         logger.info('Skipping birthday for non-member', {
           guild_id: guildId,
           user_id: row.user_id,
           username: row.username ?? null,
         });
         continue;
+      }
+      member = fetched;
+      if (!member) {
+        sub.errors++;
+        logger.warn('Announcing birthday despite unverified membership', {
+          guild_id: guildId,
+          user_id: row.user_id,
+          username: row.username ?? null,
+          reason: 'transient member fetch failure',
+        });
       }
     }
 

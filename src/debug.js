@@ -18,6 +18,7 @@ import { formatZodiac, zodiacFor } from './utils/zodiac.js';
 import { fetchDailyHoroscope, horoscopeEnabled, threadsEnabled } from './utils/horoscope.js';
 import { logger, getRecentErrors } from './logger.js';
 import { withLock } from './utils/locks.js';
+import { fetchMemberSafe } from './utils/membership.js';
 
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -55,12 +56,14 @@ function escapeMd(s) {
 }
 
 // Resolves display names and drops rows whose user is no longer a member
-// of the guild — we don't want to announce/list ex-members.
+// of the guild — we don't want to announce/list ex-members. Only a confirmed
+// non-member is dropped; on a transient fetch failure we keep the row with
+// its stored name rather than silently dropping a real member.
 async function resolveDisplayNames(guild, rows) {
   const out = [];
   for (const r of rows) {
-    const member = await guild.members.fetch(r.user_id).catch(() => null);
-    if (!member) {
+    const { member, gone } = await fetchMemberSafe(guild, r.user_id);
+    if (gone) {
       logger.info('Skipping non-member during display name resolution', {
         guild_id: guild.id,
         user_id: r.user_id,
@@ -241,8 +244,11 @@ async function onCatchUpMonth(interaction) {
   let alreadyAnnounced = 0;
   let nonMembers = 0;
   for (const row of candidates) {
-    const stillMember = await interaction.guild.members.fetch(row.user_id).catch(() => null);
-    if (!stillMember) {
+    // Only a confirmed non-member is skipped; a transient fetch failure
+    // leaves membership unknown and falls through to the claim so a real
+    // member's belated birthday isn't silently dropped.
+    const { gone } = await fetchMemberSafe(interaction.guild, row.user_id);
+    if (gone) {
       nonMembers++;
       logger.info('Skipping catch-up for non-member', {
         guild_id: interaction.guildId,
