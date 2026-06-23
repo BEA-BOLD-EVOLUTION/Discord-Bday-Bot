@@ -427,6 +427,25 @@ export async function promoteSetupPendingToPanel(guild) {
 // existing role by id (if still present) or by name; otherwise creates a new
 // one and persists its id. Requires ManageRoles on the bot; logs and bails if
 // missing so admins can set one manually via /birthday-config.
+// Hoist the Birthday role so members carrying it show up in their own group in
+// the member-list sidebar — without this it's nearly invisible. Best-effort:
+// editing a role needs ManageRoles and the role to sit below the bot's highest
+// role, so failures are logged at debug and otherwise ignored. Runs for every
+// guild via the startup back-fill, so existing roles get hoisted too.
+async function ensureRoleHoisted(role) {
+  if (!role || role.hoist) return;
+  try {
+    await role.edit({ hoist: true }, 'Birthday Bot: show Birthday role in the member list');
+    logger.info('birthday_role_hoisted', { guild_id: role.guild.id, role_id: role.id });
+  } catch (err) {
+    logger.debug('Could not hoist Birthday role; skipping', {
+      guild_id: role.guild?.id,
+      role_id: role.id,
+      error: err,
+    });
+  }
+}
+
 const roleInflight = new Map();
 export async function ensureBirthdayRole(guild) {
   const prior = roleInflight.get(guild.id);
@@ -447,6 +466,7 @@ async function _ensureBirthdayRole(guild) {
         (await guild.roles.fetch(settings.birthday_role_id).catch(() => null));
       if (existing) {
         logger.info('birthday_role_present', { guild_id: guild.id, role_id: existing.id });
+        await ensureRoleHoisted(existing);
         return existing;
       }
       // configured role is gone — fall through and re-provision
@@ -477,7 +497,7 @@ async function _ensureBirthdayRole(guild) {
           name: DEFAULT_BIRTHDAY_ROLE_NAME,
           color: DEFAULT_BIRTHDAY_ROLE_COLOR,
           mentionable: true,
-          hoist: false,
+          hoist: true,
           reason: 'Birthday Bot onboarding: created Birthday role',
         });
         logger.info('birthday_role_created', { guild_id: guild.id, role_id: role.id });
@@ -490,6 +510,7 @@ async function _ensureBirthdayRole(guild) {
       }
     }
 
+    await ensureRoleHoisted(role);
     await updateGuildSettings(guild.id, { birthday_role_id: role.id });
     return role;
   } catch (err) {
