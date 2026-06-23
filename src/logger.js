@@ -60,8 +60,11 @@ export function getRecentErrors({ guildId = null, limit = 10 } = {}) {
 }
 
 function emit(level, message, fields = {}) {
-  const safeFields = redact(fields) ?? {};
-  if (safeFields.error) safeFields.error = serializeError(safeFields.error);
+  // Serialize the error BEFORE redacting. redact() flattens objects via
+  // Object.entries (own-enumerable only), which would strip an Error's
+  // name/message/stack and leave just enumerable props like `code`.
+  const prepared = fields?.error ? { ...fields, error: serializeError(fields.error) } : fields;
+  const safeFields = redact(prepared) ?? {};
   const record = {
     timestamp: new Date().toISOString(),
     level,
