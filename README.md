@@ -68,9 +68,34 @@ the member's zodiac sign.
    - Bot permissions: `View Channels`, `Send Messages`, `Embed Links`,
      `Manage Roles`, `Manage Channels`
    - Visit the generated URL and add the bot to your server.
-5. **In your Discord server**, drag the bot's role **above** your birthday
-   role under *Server Settings → Roles* (Discord requires this for the bot to
-   assign the role).
+5. **Set the role hierarchy.** This is the #1 reason the birthday role "doesn't
+   work." Discord only lets a bot assign, remove, or edit roles that sit
+   **below** the bot's own highest role. When you add the bot, Discord creates
+   an integration role for it (usually named after the bot, e.g. `OrbitDay`).
+   In *Server Settings → Roles*, drag that role **above** the `🎂 Birthday`
+   role so the order looks like this (top = highest):
+
+   ```
+   ── Server Settings → Roles ──
+     @Admin / @Mod        ← your staff roles (can be anywhere above the bot)
+     @OrbitDay            ← the BOT's role   ✅ must be ABOVE the birthday role
+     @🎂 Birthday          ← the role the bot assigns on someone's birthday
+     @everyone
+   ```
+
+   Rules of thumb:
+   - Only the **birthday role's position relative to the bot's role** matters.
+     A member's other roles can be higher than the bot — that's fine.
+   - If the `🎂 Birthday` role is ever **at or above** the bot's role, the bot
+     **silently skips** assigning/hoisting it. By design it does **not** error
+     or post alerts about this (the role is an optional, best-effort feature) —
+     so if you expect it and don't see it, check this ordering first.
+   - The bot also needs the **Manage Roles** permission (included in the invite
+     link in step 4).
+   - Whenever the bot creates the birthday role itself, it lands just under the
+     bot's role automatically — correct by default. You only need to fix the
+     order if you pointed the bot at a role you created higher up, or moved
+     things around later.
 6. Optional but recommended for dev: enable Developer Mode in Discord
    (*User Settings → Advanced*), then right-click your test server icon →
    **Copy Server ID** — set this as `DISCORD_DEV_GUILD_ID` so slash commands
