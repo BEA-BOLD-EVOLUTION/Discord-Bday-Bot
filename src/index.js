@@ -38,7 +38,9 @@ client.once(Events.ClientReady, async (c) => {
       logger.error('Onboarding back-fill failed', { guild_id: guild.id, error: err })
     );
     ensureBirthdayRole(guild).catch((err) =>
-      logger.error('Birthday role back-fill failed', { guild_id: guild.id, error: err })
+      // Optional feature — a failure here shouldn't alert; ensureBirthdayRole
+      // already logs the specific reason at debug level.
+      logger.debug('Birthday role back-fill failed', { guild_id: guild.id, error: err })
     );
     ensureBotPermsOnConfiguredChannels(guild).catch((err) =>
       logger.error('Channel perms back-fill failed', { guild_id: guild.id, error: err })

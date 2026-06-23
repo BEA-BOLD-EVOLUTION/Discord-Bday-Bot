@@ -162,8 +162,8 @@ async function _runDailyJobInner(client, options = {}) {
         try {
           await removeExpiredBirthdayRoles(client);
         } catch (err) {
-          totals.errors++;
-          logger.error('Failed to remove expired birthday roles', { error: err });
+          // Optional feature — don't count toward run errors or alert.
+          logger.debug('Failed to remove expired birthday roles', { error: err });
         }
         try {
           await removeExpiredHoroscopeThreads(client);
@@ -491,23 +491,30 @@ async function processGuildBirthdays(
   }
 
   if (!isTest && settings.role_enabled !== false && settings.birthday_role_id) {
+    // The birthday role is a best-effort nicety, not core functionality — the
+    // announcements above already went out. So if it can't be assigned (the
+    // role was deleted, we lack ManageRoles, it sits above our highest role, or
+    // a single add fails) we skip quietly: debug-level only, no error count, no
+    // alert. That keeps a flaky or unconfigured role from generating daily noise
+    // across every guild while still working wherever it's set up correctly.
     const me = guild.members.me;
     const role =
       guild.roles.cache.get(settings.birthday_role_id) ??
       (await guild.roles.fetch(settings.birthday_role_id).catch(() => null));
 
     if (!role) {
-      sub.errors++;
-      logger.warn('Configured birthday role not found', {
+      logger.debug('Birthday role not found; skipping role assignment', {
         guild_id: guildId,
         role_id: settings.birthday_role_id,
       });
     } else if (!me?.permissions.has('ManageRoles')) {
-      sub.errors++;
-      logger.warn('Missing ManageRoles permission', { guild_id: guildId });
+      logger.debug('Missing ManageRoles; skipping birthday role assignment', {
+        guild_id: guildId,
+      });
     } else if (me.roles.highest.comparePositionTo(role) <= 0) {
-      sub.errors++;
-      logger.warn("Birthday role is at or above the bot's highest role", { guild_id: guildId });
+      logger.debug("Birthday role at or above bot's highest role; skipping assignment", {
+        guild_id: guildId,
+      });
     } else {
       for (const a of announceable) {
         try {
@@ -517,8 +524,7 @@ async function processGuildBirthdays(
           await recordActiveBirthdayRole(guildId, a.user_id, role.id);
           sub.roles_added++;
         } catch (err) {
-          sub.errors++;
-          logger.warn('Failed to assign birthday role', {
+          logger.debug('Failed to assign birthday role; skipping', {
             guild_id: guildId,
             user_id: a.user_id,
             error: err,
@@ -546,7 +552,8 @@ async function removeExpiredBirthdayRoles(client) {
       }
       await clearActiveBirthdayRole(r.guild_id, r.user_id);
     } catch (err) {
-      logger.warn('Failed to clear expired birthday role', { error: err });
+      // Best-effort cleanup of an optional feature — don't alert on failure.
+      logger.debug('Failed to clear expired birthday role', { error: err });
     }
   }
 }

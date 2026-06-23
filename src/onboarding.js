@@ -465,7 +465,9 @@ async function _ensureBirthdayRole(guild) {
     if (!role) {
       const me = guild.members.me;
       if (!me?.permissions.has(PermissionFlagsBits.ManageRoles)) {
-        logger.error('Cannot auto-create Birthday role: missing Manage Roles', {
+        // The birthday role is optional; not having perms to create it isn't an
+        // error worth alerting on. Skip quietly.
+        logger.debug('Skipping Birthday role auto-create: missing Manage Roles', {
           guild_id: guild.id,
         });
         return null;
@@ -480,7 +482,10 @@ async function _ensureBirthdayRole(guild) {
         });
         logger.info('birthday_role_created', { guild_id: guild.id, role_id: role.id });
       } catch (err) {
-        logger.error('Failed to create Birthday role', { guild_id: guild.id, error: err });
+        logger.debug('Failed to create Birthday role; skipping', {
+          guild_id: guild.id,
+          error: err,
+        });
         return null;
       }
     }
@@ -488,7 +493,7 @@ async function _ensureBirthdayRole(guild) {
     await updateGuildSettings(guild.id, { birthday_role_id: role.id });
     return role;
   } catch (err) {
-    logger.error('ensureBirthdayRole failed', { guild_id: guild.id, error: err });
+    logger.debug('ensureBirthdayRole failed; skipping', { guild_id: guild.id, error: err });
     return null;
   }
 }
