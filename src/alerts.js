@@ -32,7 +32,7 @@ function formatRecord(record) {
   }
   // Surface a few useful context fields if present.
   const ctx = {};
-  for (const k of ['guild_id', 'channel_id', 'user_id', 'region']) {
+  for (const k of ['guild_id', 'channel_id', 'user_id', 'role_id', 'region']) {
     if (record[k]) ctx[k] = record[k];
   }
   if (Object.keys(ctx).length) {
