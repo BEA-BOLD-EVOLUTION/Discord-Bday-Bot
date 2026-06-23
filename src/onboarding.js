@@ -103,6 +103,19 @@ function permLabel(p) {
   return PERM_LABELS[String(p)] || String(p);
 }
 
+// Human-readable explanation for each reason code ensureBotCanPost /
+// ensureBotPermsOnConfiguredChannels can produce. Keep the keys in sync with
+// those functions — a missing key falls back to a generic message below.
+const PERM_REASON_TEXT = {
+  no_member: "I couldn't resolve my own membership in this server",
+  no_view:
+    "I can't see this channel at all — a category or channel override is denying me View Channel",
+  no_manage_roles:
+    "I don't have Manage Permissions on this channel, so I can't fix the override myself",
+  cant_grant_unheld:
+    "A channel or category override is denying me these permissions, and Discord won't let me grant myself a permission I don't already hold",
+};
+
 // In-process cache so we DM the owner at most once per process per guild.
 const ownerNotified = new Set();
 async function notifyOwnerOfPermIssues(guild, problems) {
@@ -115,17 +128,14 @@ async function notifyOwnerOfPermIssues(guild, problems) {
       const chRef = p.channel?.id ? `<#${p.channel.id}>` : '(missing channel)';
       const missing = (p.missing || []).map(permLabel).join(', ') || 'view access';
       const why =
-        p.reason === 'no_view'
-          ? "I can't even see this channel"
-          : p.reason === 'no_manage'
-            ? 'I lack Manage Channel here (a category or channel override is blocking me)'
-            : `Discord rejected my edit (code ${p.code ?? '?'})`;
+        PERM_REASON_TEXT[p.reason] ??
+        `Discord rejected my edit${p.code ? ` (code ${p.code})` : ''}`;
       return `• **${p.slot}** → ${chRef}\n   missing: ${missing}\n   reason: ${why}`;
     });
     const msg =
       `Hi! I'm **OrbitDay** running in **${guild.name}**. I tried to fix my own channel permissions but couldn't:\n\n` +
       lines.join('\n\n') +
-      `\n\n**Fix:** open each channel → *Edit Channel* → *Permissions* → add my bot role and tick **View Channel**, **Send Messages**, **Embed Links**, **Read Message History** (plus **Create Public Threads** + **Send Messages in Threads** for the collection/announcement channels). Or simply give my role **Manage Channels** at the server level with no channel-level deny overrides.\n\nOnce that's done, I'll auto-heal everything else on my next restart.`;
+      `\n\n**Fix:** open each channel → *Edit Channel* → *Permissions* → add my bot role and tick **View Channel**, **Send Messages**, **Embed Links**, **Read Message History** (plus **Create Public Threads** + **Send Messages in Threads** for the collection/announcement channels). Or simply give my role **Administrator**, which bypasses channel overrides entirely.\n\nOnce that's done, I'll auto-heal everything else on my next restart.`;
     await owner.send(msg).catch(() => null);
     logger.info('owner_perm_dm_sent', {
       guild_id: guild.id,
