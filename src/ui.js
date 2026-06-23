@@ -79,7 +79,7 @@ export function buildSetupPendingMessage() {
       [
         'Thanks for adding OrbitDay! This channel will host the public birthday panel once setup is complete.',
         '',
-        '**Admins:** run `/birthday-config` and set, at minimum, the **Announcement channel** (where birthday shoutouts will be posted). The public panel will appear here automatically once that\'s saved.',
+        "**Admins:** run `/birthday-config` and set, at minimum, the **Announcement channel** (where birthday shoutouts will be posted). The public panel will appear here automatically once that's saved.",
         '',
         '_You can also configure a Birthday role, audit channel, and alert channel from the same panel._',
       ].join('\n')
@@ -107,9 +107,21 @@ export function buildPanelMessage() {
     .setColor(0xff7ab6);
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(CID.add).setLabel('Add Birthday').setEmoji('🎂').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(CID.update).setLabel('Update Birthday').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(CID.remove).setLabel('Remove Birthday').setEmoji('🗑').setStyle(ButtonStyle.Danger)
+    new ButtonBuilder()
+      .setCustomId(CID.add)
+      .setLabel('Add Birthday')
+      .setEmoji('🎂')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(CID.update)
+      .setLabel('Update Birthday')
+      .setEmoji('✏️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(CID.remove)
+      .setLabel('Remove Birthday')
+      .setEmoji('🗑')
+      .setStyle(ButtonStyle.Danger)
   );
 
   return { embeds: [embed], components: [row] };
@@ -138,7 +150,10 @@ export function buildDaySelect(month, mode = 'add') {
   // Split days into two balanced dropdowns: 1–15 and 16–end. Discord caps
   // selects at 25 options, so we can't show all 31 in one — splitting evenly
   // looks cleaner than 25 + a tiny overflow.
-  const all = Array.from({ length: max }, (_, i) => ({ label: String(i + 1), value: String(i + 1) }));
+  const all = Array.from({ length: max }, (_, i) => ({
+    label: String(i + 1),
+    value: String(i + 1),
+  }));
   // Always exactly two dropdowns: 1–15 and 16–end (end = 28/29/30/31).
   const chunks = [all.slice(0, 15), all.slice(15)];
 
@@ -169,8 +184,8 @@ export function buildConfirm(month, day, region) {
     .setTitle('🎂 Confirm Your Birthday')
     .setDescription(
       `**${formatBirthday(month, day)}**${zodiac ? `  ·  ${zodiac}` : ''}\nRegion: **${regionLabel(region)}** _(auto-detected from your Discord language)_` +
-      (r ? `\n_${r.description}_` : '') +
-      `\n\nOnly you can see this entry. On your birthday the server will get a public shoutout in your region's window.`
+        (r ? `\n_${r.description}_` : '') +
+        `\n\nOnly you can see this entry. On your birthday the server will get a public shoutout in your region's window.`
     )
     .setColor(0xff7ab6);
 
@@ -180,7 +195,11 @@ export function buildConfirm(month, day, region) {
       .setLabel('Confirm')
       .setEmoji('✅')
       .setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(CID.cancel).setLabel('Change').setEmoji('✏️').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder()
+      .setCustomId(CID.cancel)
+      .setLabel('Change')
+      .setEmoji('✏️')
+      .setStyle(ButtonStyle.Secondary)
   );
 
   return { content: '', embeds: [embed], components: [row] };
@@ -205,7 +224,7 @@ export function buildDebugPanel(state) {
     }`,
     `**Next scheduler runs:**`,
     ...Object.entries(state.nextRunsByRegion ?? {}).map(
-      ([region, next]) => ` • ${region}: ${next ?? '_unknown_'}`
+      ([region, next]) => ` • ${region}: ${next ?? '_unknown_'}`
     ),
     `**Debug mode:** ${state.settings?.debug_mode ? 'ON' : 'off'}`,
   ];
@@ -216,16 +235,42 @@ export function buildDebugPanel(state) {
     .setColor(0x5865f2);
 
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(CID.debug.perms).setLabel('Check Bot Permissions').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(CID.debug.testAnnounce).setLabel('Test Birthday Announcement').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(CID.debug.testRole).setLabel('Test Birthday Role').setStyle(ButtonStyle.Primary)
+    new ButtonBuilder()
+      .setCustomId(CID.debug.perms)
+      .setLabel('Check Bot Permissions')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(CID.debug.testAnnounce)
+      .setLabel('Test Birthday Announcement')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(CID.debug.testRole)
+      .setLabel('Test Birthday Role')
+      .setStyle(ButtonStyle.Primary)
   );
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(CID.debug.today).setLabel("Check Today's Birthdays").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(CID.debug.catchUpMonth).setLabel('Catch Up Missed (This Month)').setEmoji('⏪').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(CID.debug.belatedHoroscopes).setLabel('Post Belated Horoscopes').setEmoji('🔮').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(CID.debug.errors).setLabel('View Recent Errors').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(CID.debug.rebuildPanel).setLabel('Rebuild Birthday Panel').setStyle(ButtonStyle.Danger)
+    new ButtonBuilder()
+      .setCustomId(CID.debug.today)
+      .setLabel("Check Today's Birthdays")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(CID.debug.catchUpMonth)
+      .setLabel('Catch Up Missed (This Month)')
+      .setEmoji('⏪')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(CID.debug.belatedHoroscopes)
+      .setLabel('Post Belated Horoscopes')
+      .setEmoji('🔮')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(CID.debug.errors)
+      .setLabel('View Recent Errors')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(CID.debug.rebuildPanel)
+      .setLabel('Rebuild Birthday Panel')
+      .setStyle(ButtonStyle.Danger)
   );
 
   return { embeds: [embed], components: [row1, row2] };
@@ -309,9 +354,21 @@ export function buildConfigPanel(settings) {
       .setCustomId(CID.cfg.advanced)
       .setPlaceholder('Configure more…')
       .addOptions(
-        { label: 'Audit channel', value: 'audit', description: 'Where bulk import audit logs are posted.' },
-        { label: 'Alert channel', value: 'errorlog', description: 'Where error/warning logs are auto-posted.' },
-        { label: 'Admin role', value: 'admin_role', description: 'Extra role allowed to manage the bot.' },
+        {
+          label: 'Audit channel',
+          value: 'audit',
+          description: 'Where bulk import audit logs are posted.',
+        },
+        {
+          label: 'Alert channel',
+          value: 'errorlog',
+          description: 'Where error/warning logs are auto-posted.',
+        },
+        {
+          label: 'Admin role',
+          value: 'admin_role',
+          description: 'Extra role allowed to manage the bot.',
+        }
       )
   );
 
@@ -334,7 +391,7 @@ export function buildConfigPanel(settings) {
     new ButtonBuilder()
       .setCustomId(CID.cfg.refresh)
       .setLabel('Refresh')
-      .setStyle(ButtonStyle.Secondary),
+      .setStyle(ButtonStyle.Secondary)
   );
 
   return {

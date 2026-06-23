@@ -6,18 +6,32 @@
 // English-language sources. Feb 29 falls in Pisces (Feb 19 – Mar 20).
 
 const SIGNS = [
-  { id: 'capricorn',   name: 'Capricorn',   emoji: '♑', element: 'Earth', start: [12, 22], end: [1, 19] },
-  { id: 'aquarius',    name: 'Aquarius',    emoji: '♒', element: 'Air',   start: [1, 20],  end: [2, 18] },
-  { id: 'pisces',      name: 'Pisces',      emoji: '♓', element: 'Water', start: [2, 19],  end: [3, 20] },
-  { id: 'aries',       name: 'Aries',       emoji: '♈', element: 'Fire',  start: [3, 21],  end: [4, 19] },
-  { id: 'taurus',      name: 'Taurus',      emoji: '♉', element: 'Earth', start: [4, 20],  end: [5, 20] },
-  { id: 'gemini',      name: 'Gemini',      emoji: '♊', element: 'Air',   start: [5, 21],  end: [6, 20] },
-  { id: 'cancer',      name: 'Cancer',      emoji: '♋', element: 'Water', start: [6, 21],  end: [7, 22] },
-  { id: 'leo',         name: 'Leo',         emoji: '♌', element: 'Fire',  start: [7, 23],  end: [8, 22] },
-  { id: 'virgo',       name: 'Virgo',       emoji: '♍', element: 'Earth', start: [8, 23],  end: [9, 22] },
-  { id: 'libra',       name: 'Libra',       emoji: '♎', element: 'Air',   start: [9, 23],  end: [10, 22] },
-  { id: 'scorpio',     name: 'Scorpio',     emoji: '♏', element: 'Water', start: [10, 23], end: [11, 21] },
-  { id: 'sagittarius', name: 'Sagittarius', emoji: '♐', element: 'Fire',  start: [11, 22], end: [12, 21] },
+  {
+    id: 'capricorn',
+    name: 'Capricorn',
+    emoji: '♑',
+    element: 'Earth',
+    start: [12, 22],
+    end: [1, 19],
+  },
+  { id: 'aquarius', name: 'Aquarius', emoji: '♒', element: 'Air', start: [1, 20], end: [2, 18] },
+  { id: 'pisces', name: 'Pisces', emoji: '♓', element: 'Water', start: [2, 19], end: [3, 20] },
+  { id: 'aries', name: 'Aries', emoji: '♈', element: 'Fire', start: [3, 21], end: [4, 19] },
+  { id: 'taurus', name: 'Taurus', emoji: '♉', element: 'Earth', start: [4, 20], end: [5, 20] },
+  { id: 'gemini', name: 'Gemini', emoji: '♊', element: 'Air', start: [5, 21], end: [6, 20] },
+  { id: 'cancer', name: 'Cancer', emoji: '♋', element: 'Water', start: [6, 21], end: [7, 22] },
+  { id: 'leo', name: 'Leo', emoji: '♌', element: 'Fire', start: [7, 23], end: [8, 22] },
+  { id: 'virgo', name: 'Virgo', emoji: '♍', element: 'Earth', start: [8, 23], end: [9, 22] },
+  { id: 'libra', name: 'Libra', emoji: '♎', element: 'Air', start: [9, 23], end: [10, 22] },
+  { id: 'scorpio', name: 'Scorpio', emoji: '♏', element: 'Water', start: [10, 23], end: [11, 21] },
+  {
+    id: 'sagittarius',
+    name: 'Sagittarius',
+    emoji: '♐',
+    element: 'Fire',
+    start: [11, 22],
+    end: [12, 21],
+  },
 ];
 
 /**

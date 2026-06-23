@@ -19,7 +19,10 @@ export async function runStartupHealthCheck(client) {
       if (client.guilds.cache.size > 0) break;
     }
   }
-  logger.info('startup_health_check_begin', { user: client.user?.tag, guilds: client.guilds.cache.size });
+  logger.info('startup_health_check_begin', {
+    user: client.user?.tag,
+    guilds: client.guilds.cache.size,
+  });
 
   // ---- Discord login ----
   if (!client.user) {
@@ -53,7 +56,9 @@ export async function runStartupHealthCheck(client) {
   // ---- Scheduler ----
   try {
     const nextByRegion = getNextRunsByRegion();
-    const broken = Object.entries(nextByRegion).filter(([, v]) => !v).map(([k]) => k);
+    const broken = Object.entries(nextByRegion)
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
     if (broken.length) {
       logger.error('Regional scheduler cron(s) invalid', { broken });
     } else {

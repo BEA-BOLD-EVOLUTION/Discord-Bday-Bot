@@ -22,8 +22,18 @@ import { withLock, withDbLock } from './utils/locks.js';
 import { fetchMemberSafe } from './utils/membership.js';
 
 const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 // In-memory "last run" state, surfaced to the admin debug panel.
@@ -99,7 +109,7 @@ export async function runDailyJob(client, options = {}) {
   const skipLock = isTest || !!options.guildId;
   if (!skipLock) {
     const dbR = await withDbLock(lockKey, 15 * 60, () =>
-      withLock(lockKey, () => _runDailyJobInner(client, options)),
+      withLock(lockKey, () => _runDailyJobInner(client, options))
     );
     if (!dbR.acquired) {
       logger.warn('birthday_scheduler_skipped_overlap', {
@@ -136,7 +146,13 @@ async function _runDailyJobInner(client, options = {}) {
     target_guild: options.guildId ?? null,
   });
 
-  let totals = { birthdays_found: 0, announcements_sent: 0, roles_added: 0, errors: 0, members_unverified: 0 };
+  const totals = {
+    birthdays_found: 0,
+    announcements_sent: 0,
+    roles_added: 0,
+    errors: 0,
+    members_unverified: 0,
+  };
 
   try {
     if (!isTest) {
@@ -158,7 +174,7 @@ async function _runDailyJobInner(client, options = {}) {
       }
     }
 
-    let rows = isTest ? [] : await getBirthdaysForRegion(month, day, region.id);
+    const rows = isTest ? [] : await getBirthdaysForRegion(month, day, region.id);
     totals.birthdays_found = rows.length;
 
     // Group by guild
@@ -189,14 +205,20 @@ async function _runDailyJobInner(client, options = {}) {
 
     for (const [guildId, guildRows] of byGuild) {
       try {
-        const sub = await processGuildBirthdays(client, guildId, guildRows, isoDate, region, { isTest });
+        const sub = await processGuildBirthdays(client, guildId, guildRows, isoDate, region, {
+          isTest,
+        });
         totals.announcements_sent += sub.announcements_sent;
         totals.roles_added += sub.roles_added;
         totals.errors += sub.errors;
         totals.members_unverified += sub.members_unverified;
       } catch (err) {
         totals.errors++;
-        logger.error('Birthday processing failed for guild', { guild_id: guildId, region: region.id, error: err });
+        logger.error('Birthday processing failed for guild', {
+          guild_id: guildId,
+          region: region.id,
+          error: err,
+        });
       }
     }
   } finally {
@@ -254,15 +276,27 @@ function mentionOrName(entry) {
 // elements.
 function elementColor(element) {
   switch (element) {
-    case 'Fire':  return 0xff5a3c;
-    case 'Earth': return 0x7a8f3d;
-    case 'Air':   return 0x8ec5ff;
-    case 'Water': return 0x5aa2e6;
-    default:      return 0xff7ab6;
+    case 'Fire':
+      return 0xff5a3c;
+    case 'Earth':
+      return 0x7a8f3d;
+    case 'Air':
+      return 0x8ec5ff;
+    case 'Water':
+      return 0x5aa2e6;
+    default:
+      return 0xff7ab6;
   }
 }
 
-async function processGuildBirthdays(client, guildId, rows, isoDate, region, { isTest = false } = {}) {
+async function processGuildBirthdays(
+  client,
+  guildId,
+  rows,
+  isoDate,
+  region,
+  { isTest = false } = {}
+) {
   const sub = { announcements_sent: 0, roles_added: 0, errors: 0, members_unverified: 0 };
   const settings = await getGuildSettings(guildId);
   if (!settings) {
@@ -318,11 +352,18 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
         claimed = await claimAnnouncement(guildId, row.user_id, isoDate);
       } catch (err) {
         sub.errors++;
-        logger.error('Failed to claim announcement', { guild_id: guildId, user_id: row.user_id, error: err });
+        logger.error('Failed to claim announcement', {
+          guild_id: guildId,
+          user_id: row.user_id,
+          error: err,
+        });
         continue;
       }
       if (!claimed) {
-        logger.debug('Announcement already sent today', { guild_id: guildId, user_id: row.user_id });
+        logger.debug('Announcement already sent today', {
+          guild_id: guildId,
+          user_id: row.user_id,
+        });
         continue;
       }
     }
@@ -368,7 +409,11 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
         sub.announcements_sent = announceable.length;
       } catch (err) {
         sub.errors++;
-        logger.warn('Failed to send announcement', { guild_id: guildId, region: region.id, error: err });
+        logger.warn('Failed to send announcement', {
+          guild_id: guildId,
+          region: region.id,
+          error: err,
+        });
       }
 
       // Daily horoscope — one embed per region, posted in a thread off the
@@ -434,7 +479,11 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
               await target.send({ embeds: [embed], allowedMentions: { parse: [] } });
             }
           } catch (err) {
-            logger.warn('Failed to send horoscope embed', { guild_id: guildId, region: region.id, error: err });
+            logger.warn('Failed to send horoscope embed', {
+              guild_id: guildId,
+              region: region.id,
+              error: err,
+            });
           }
         }
       }
@@ -449,7 +498,10 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
 
     if (!role) {
       sub.errors++;
-      logger.warn('Configured birthday role not found', { guild_id: guildId, role_id: settings.birthday_role_id });
+      logger.warn('Configured birthday role not found', {
+        guild_id: guildId,
+        role_id: settings.birthday_role_id,
+      });
     } else if (!me?.permissions.has('ManageRoles')) {
       sub.errors++;
       logger.warn('Missing ManageRoles permission', { guild_id: guildId });
@@ -466,7 +518,11 @@ async function processGuildBirthdays(client, guildId, rows, isoDate, region, { i
           sub.roles_added++;
         } catch (err) {
           sub.errors++;
-          logger.warn('Failed to assign birthday role', { guild_id: guildId, user_id: a.user_id, error: err });
+          logger.warn('Failed to assign birthday role', {
+            guild_id: guildId,
+            user_id: a.user_id,
+            error: err,
+          });
         }
       }
     }
@@ -543,5 +599,9 @@ async function removeExpiredHoroscopeThreads(client) {
       logger.warn('Horoscope thread cleanup error', { thread_id: t.thread_id, error: err });
     }
   }
-  logger.info('Horoscope thread cleanup complete', { deleted, dropped_rows_only: dropped, retention_days: days });
+  logger.info('Horoscope thread cleanup complete', {
+    deleted,
+    dropped_rows_only: dropped,
+    retention_days: days,
+  });
 }

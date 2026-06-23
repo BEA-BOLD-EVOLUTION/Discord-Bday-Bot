@@ -1,5 +1,6 @@
-import { logger, setLogNotifier } from './logger.js';
+import { setLogNotifier } from './logger.js';
 import { getGuildSettings } from './db.js';
+import { formatRecord } from './alertFormat.js';
 
 // Throttle: avoid spamming the alert channel with the same error in a loop.
 // Key = `${guildId}|${level}|${message}` → last-sent timestamp (ms).
@@ -18,27 +19,6 @@ function rememberSent(key, now) {
 function shouldSuppress(key, now) {
   const prev = lastSent.get(key);
   return prev && now - prev < SUPPRESS_WINDOW_MS;
-}
-
-function formatRecord(record) {
-  const lines = [
-    `**[${record.level.toUpperCase()}]** ${record.message}`,
-    `\`${record.timestamp}\``,
-  ];
-  if (record.error) {
-    const e = record.error;
-    const detail = `${e.name ?? 'Error'}: ${(e.message ?? String(e)).slice(0, 500)}`;
-    lines.push(`Error: \`${detail}\``);
-  }
-  // Surface a few useful context fields if present.
-  const ctx = {};
-  for (const k of ['guild_id', 'channel_id', 'user_id', 'role_id', 'region']) {
-    if (record[k]) ctx[k] = record[k];
-  }
-  if (Object.keys(ctx).length) {
-    lines.push('```json\n' + JSON.stringify(ctx, null, 2) + '\n```');
-  }
-  return lines.join('\n');
 }
 
 // Install the notifier. Called once after the Discord client is ready so we
@@ -70,12 +50,13 @@ async function deliver(client, guildId, record) {
   const channelId = settings?.error_log_channel_id;
   if (!channelId) return;
 
-  const guild = client.guilds.cache.get(guildId)
-    ?? (await client.guilds.fetch(guildId).catch(() => null));
+  const guild =
+    client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId).catch(() => null));
   if (!guild) return;
 
-  const channel = guild.channels.cache.get(channelId)
-    ?? (await guild.channels.fetch(channelId).catch(() => null));
+  const channel =
+    guild.channels.cache.get(channelId) ??
+    (await guild.channels.fetch(channelId).catch(() => null));
   if (!channel?.isTextBased?.()) return;
 
   try {

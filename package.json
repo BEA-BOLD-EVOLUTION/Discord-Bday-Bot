@@ -9,7 +9,13 @@
     "dev": "node --watch src/index.js",
     "register": "node src/scripts/registerCommands.js",
     "db:migrate": "node src/scripts/dbMigrate.js",
-    "test": "node --test"
+    "lint": "eslint \"src/**/*.js\" \"test/**/*.js\"",
+    "lint:fix": "eslint \"src/**/*.js\" \"test/**/*.js\" --fix",
+    "format": "prettier --write \"src/**/*.js\" \"test/**/*.js\" \"*.js\"",
+    "format:check": "prettier --check \"src/**/*.js\" \"test/**/*.js\" \"*.js\"",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test"
   },
   "engines": {
     "node": ">=22"
@@ -21,5 +27,14 @@
     "dotenv": "^16.4.5",
     "node-cron": "^3.0.3",
     "undici": "^6.20.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.0.0",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.7.0",
+    "prettier": "^3.8.4",
+    "typescript": "^6.0.3"
   }
 }

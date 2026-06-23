@@ -6,7 +6,11 @@ import { handleCommand } from './commands.js';
 import { startScheduler } from './scheduler.js';
 import { startCalendarServer } from './calendarFeed.js';
 import { runStartupHealthCheck } from './healthcheck.js';
-import { ensureBirthdayClubChannel, ensureBirthdayRole, ensureBotPermsOnConfiguredChannels } from './onboarding.js';
+import {
+  ensureBirthdayClubChannel,
+  ensureBirthdayRole,
+  ensureBotPermsOnConfiguredChannels,
+} from './onboarding.js';
 import { installAlertNotifier } from './alerts.js';
 import { registerCommands } from './scripts/registerCommands.js';
 

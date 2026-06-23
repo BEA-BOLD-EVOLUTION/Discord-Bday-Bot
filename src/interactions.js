@@ -1,5 +1,12 @@
 import { MessageFlags } from 'discord.js';
-import { CID, buildMonthSelect, buildDaySelect, buildConfirm, buildConfigPanel, buildAdvancedConfig } from './ui.js';
+import {
+  CID,
+  buildMonthSelect,
+  buildDaySelect,
+  buildConfirm,
+  buildConfigPanel,
+  buildAdvancedConfig,
+} from './ui.js';
 import {
   upsertBirthday,
   deleteBirthday,
@@ -44,8 +51,12 @@ export async function handleInteraction(interaction) {
     });
     // Report technical detail to the admin error channel; show users a plain message.
     if (interaction.guild) {
-      reportToErrorChannel(interaction, `Interaction handler failed (customId=${interaction.customId})`, 'error', err)
-        .catch(() => {});
+      reportToErrorChannel(
+        interaction,
+        `Interaction handler failed (customId=${interaction.customId})`,
+        'error',
+        err
+      ).catch(() => {});
     }
     const msg = 'Something went wrong. Please try again.';
     try {
@@ -97,10 +108,16 @@ async function handleButton(interaction) {
     const d = Number(parts[3]);
     const region = parts[4];
     if (!isValidDate(m, d)) {
-      return interaction.reply({ content: 'That date is invalid. Please start over.', ...EPHEMERAL });
+      return interaction.reply({
+        content: 'That date is invalid. Please start over.',
+        ...EPHEMERAL,
+      });
     }
     if (!isValidRegion(region)) {
-      return interaction.reply({ content: 'That region is invalid. Please start over.', ...EPHEMERAL });
+      return interaction.reply({
+        content: 'That region is invalid. Please start over.',
+        ...EPHEMERAL,
+      });
     }
     try {
       await upsertBirthday({
@@ -121,15 +138,24 @@ async function handleButton(interaction) {
         region,
       });
     } catch (err) {
-      logger.error('Failed to save birthday', { guild_id: interaction.guildId, user_id: interaction.user.id, error: err });
-      reportToErrorChannel(interaction, 'Failed to save user birthday', 'error', err).catch(() => {});
+      logger.error('Failed to save birthday', {
+        guild_id: interaction.guildId,
+        user_id: interaction.user.id,
+        error: err,
+      });
+      reportToErrorChannel(interaction, 'Failed to save user birthday', 'error', err).catch(
+        () => {}
+      );
       return interaction.reply({
         content: 'Something went wrong saving your birthday. Please try again.',
         ...EPHEMERAL,
       });
     }
     return interaction.update({
-      content: `🎉 Saved! Your birthday is **${formatBirthday(m, d)}**${(() => { const z = formatZodiac(m, d); return z ? ` — ${z}` : ''; })()} — ${regionLabel(region)}. The server will get a public shoutout on the day.`,
+      content: `🎉 Saved! Your birthday is **${formatBirthday(m, d)}**${(() => {
+        const z = formatZodiac(m, d);
+        return z ? ` — ${z}` : '';
+      })()} — ${regionLabel(region)}. The server will get a public shoutout on the day.`,
       embeds: [],
       components: [],
     });
@@ -152,7 +178,10 @@ async function handleSelect(interaction) {
     const month = Number(parts[3]);
     const day = Number(interaction.values[0]);
     if (!isValidDate(month, day)) {
-      return interaction.reply({ content: 'Invalid date selected. Please try again.', ...EPHEMERAL });
+      return interaction.reply({
+        content: 'Invalid date selected. Please try again.',
+        ...EPHEMERAL,
+      });
     }
     // Auto-pick the announcement region from the user's Discord client locale.
     // Falls back to 'americas' for unknown locales. Admins can override later
@@ -204,12 +233,20 @@ async function handleConfig(interaction) {
     if (id === CID.cfg.chAudit) {
       await updateGuildSettings(guildId, { audit_channel_id: channelId });
       await ensureBotPermsOnConfiguredChannels(interaction.guild).catch(() => {});
-      return interaction.update({ content: `✅ Audit channel set to <#${channelId}>.`, components: [], embeds: [] });
+      return interaction.update({
+        content: `✅ Audit channel set to <#${channelId}>.`,
+        components: [],
+        embeds: [],
+      });
     }
     if (id === CID.cfg.chErrorLog) {
       await updateGuildSettings(guildId, { error_log_channel_id: channelId });
       await ensureBotPermsOnConfiguredChannels(interaction.guild).catch(() => {});
-      return interaction.update({ content: `✅ Alert channel set to <#${channelId}>.`, components: [], embeds: [] });
+      return interaction.update({
+        content: `✅ Alert channel set to <#${channelId}>.`,
+        components: [],
+        embeds: [],
+      });
     }
   }
 
@@ -220,7 +257,11 @@ async function handleConfig(interaction) {
     if (id === CID.cfg.roleBirthday) return saveAndRefresh({ birthday_role_id: roleId });
     if (id === CID.cfg.roleAdmin) {
       await updateGuildSettings(guildId, { admin_role_id: roleId });
-      return interaction.update({ content: `✅ Admin role set to <@&${roleId}>.`, components: [], embeds: [] });
+      return interaction.update({
+        content: `✅ Admin role set to <@&${roleId}>.`,
+        components: [],
+        embeds: [],
+      });
     }
   }
 

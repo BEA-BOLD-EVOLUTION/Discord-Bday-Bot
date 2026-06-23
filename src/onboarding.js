@@ -57,7 +57,12 @@ async function ensureBotCanPost(channel, required = REQUIRED_BOT_CHANNEL_PERMS) 
       bot_effective_perms_bitfield: current?.bitfield?.toString(),
       bot_role_perms_bitfield: me.permissions?.bitfield?.toString(),
     });
-    return { ok: false, reason: canManage ? 'cant_grant_unheld' : 'no_manage_roles', missing, channel };
+    return {
+      ok: false,
+      reason: canManage ? 'cant_grant_unheld' : 'no_manage_roles',
+      missing,
+      channel,
+    };
   }
   try {
     await channel.permissionOverwrites.edit(
@@ -82,17 +87,20 @@ async function ensureBotCanPost(channel, required = REQUIRED_BOT_CHANNEL_PERMS) 
   }
 }
 
+// Keys are stringified because PermissionFlagsBits values are BigInts, which
+// can't be used as computed object-literal keys under tsc --checkJs (they get
+// coerced to strings at runtime anyway).
 const PERM_LABELS = {
-  [PermissionFlagsBits.ViewChannel]: 'View Channel',
-  [PermissionFlagsBits.SendMessages]: 'Send Messages',
-  [PermissionFlagsBits.EmbedLinks]: 'Embed Links',
-  [PermissionFlagsBits.ReadMessageHistory]: 'Read Message History',
-  [PermissionFlagsBits.CreatePublicThreads]: 'Create Public Threads',
-  [PermissionFlagsBits.SendMessagesInThreads]: 'Send Messages in Threads',
-  [PermissionFlagsBits.ManageChannels]: 'Manage Channels',
+  [String(PermissionFlagsBits.ViewChannel)]: 'View Channel',
+  [String(PermissionFlagsBits.SendMessages)]: 'Send Messages',
+  [String(PermissionFlagsBits.EmbedLinks)]: 'Embed Links',
+  [String(PermissionFlagsBits.ReadMessageHistory)]: 'Read Message History',
+  [String(PermissionFlagsBits.CreatePublicThreads)]: 'Create Public Threads',
+  [String(PermissionFlagsBits.SendMessagesInThreads)]: 'Send Messages in Threads',
+  [String(PermissionFlagsBits.ManageChannels)]: 'Manage Channels',
 };
 function permLabel(p) {
-  return PERM_LABELS[p] || String(p);
+  return PERM_LABELS[String(p)] || String(p);
 }
 
 // In-process cache so we DM the owner at most once per process per guild.
@@ -110,7 +118,7 @@ async function notifyOwnerOfPermIssues(guild, problems) {
         p.reason === 'no_view'
           ? "I can't even see this channel"
           : p.reason === 'no_manage'
-            ? "I lack Manage Channel here (a category or channel override is blocking me)"
+            ? 'I lack Manage Channel here (a category or channel override is blocking me)'
             : `Discord rejected my edit (code ${p.code ?? '?'})`;
       return `• **${p.slot}** → ${chRef}\n   missing: ${missing}\n   reason: ${why}`;
     });
@@ -119,7 +127,11 @@ async function notifyOwnerOfPermIssues(guild, problems) {
       lines.join('\n\n') +
       `\n\n**Fix:** open each channel → *Edit Channel* → *Permissions* → add my bot role and tick **View Channel**, **Send Messages**, **Embed Links**, **Read Message History** (plus **Create Public Threads** + **Send Messages in Threads** for the collection/announcement channels). Or simply give my role **Manage Channels** at the server level with no channel-level deny overrides.\n\nOnce that's done, I'll auto-heal everything else on my next restart.`;
     await owner.send(msg).catch(() => null);
-    logger.info('owner_perm_dm_sent', { guild_id: guild.id, owner_id: owner.id, problems: problems.length });
+    logger.info('owner_perm_dm_sent', {
+      guild_id: guild.id,
+      owner_id: owner.id,
+      problems: problems.length,
+    });
   } catch (err) {
     logger.warn('owner_perm_dm_failed', { guild_id: guild.id, error: err?.message });
   }
@@ -165,7 +177,10 @@ export async function ensureBotPermsOnConfiguredChannels(guild) {
       await notifyOwnerOfPermIssues(guild, problems);
     }
   } catch (err) {
-    logger.warn('ensureBotPermsOnConfiguredChannels failed', { guild_id: guild.id, error: err?.message });
+    logger.warn('ensureBotPermsOnConfiguredChannels failed', {
+      guild_id: guild.id,
+      error: err?.message,
+    });
   }
 }
 
@@ -209,8 +224,9 @@ async function _ensureBirthdayClubChannel(guild) {
 
     // 1. Already configured & channel still exists?
     if (settings?.collection_channel_id) {
-      const existing = guild.channels.cache.get(settings.collection_channel_id)
-        ?? (await guild.channels.fetch(settings.collection_channel_id).catch(() => null));
+      const existing =
+        guild.channels.cache.get(settings.collection_channel_id) ??
+        (await guild.channels.fetch(settings.collection_channel_id).catch(() => null));
       if (existing) {
         logger.info('birthday_club_channel_present', {
           guild_id: guild.id,
@@ -385,8 +401,7 @@ export async function promoteSetupPendingToPanel(guild) {
 
     const pending = recent.find(
       (m) =>
-        m.author?.id === selfId &&
-        m.embeds?.some((e) => e?.footer?.text === SETUP_PENDING_MARKER)
+        m.author?.id === selfId && m.embeds?.some((e) => e?.footer?.text === SETUP_PENDING_MARKER)
     );
     if (pending) {
       await pending.delete().catch((err) =>
@@ -438,11 +453,13 @@ async function _ensureBirthdayRole(guild) {
     }
 
     // 2. Reuse an existing role by name (case-insensitive, ignoring emoji).
-    const normalize = (s) => String(s ?? '').toLowerCase().replace(/[^a-z]+/g, '');
+    const normalize = (s) =>
+      String(s ?? '')
+        .toLowerCase()
+        .replace(/[^a-z]+/g, '');
     const wanted = normalize(DEFAULT_BIRTHDAY_ROLE_NAME);
     const allRoles = await guild.roles.fetch().catch(() => null);
-    let role =
-      allRoles?.find((r) => normalize(r.name) === wanted) ?? null;
+    let role = allRoles?.find((r) => normalize(r.name) === wanted) ?? null;
 
     // 3. Otherwise create one.
     if (!role) {

@@ -5,18 +5,30 @@
 // All functions are pure — no I/O, no Discord/Supabase coupling.
 
 const MONTHS = {
-  jan: 1, january: 1,
-  feb: 2, february: 2,
-  mar: 3, march: 3,
-  apr: 4, april: 4,
+  jan: 1,
+  january: 1,
+  feb: 2,
+  february: 2,
+  mar: 3,
+  march: 3,
+  apr: 4,
+  april: 4,
   may: 5,
-  jun: 6, june: 6,
-  jul: 7, july: 7,
-  aug: 8, august: 8,
-  sep: 9, sept: 9, september: 9,
-  oct: 10, october: 10,
-  nov: 11, november: 11,
-  dec: 12, december: 12,
+  jun: 6,
+  june: 6,
+  jul: 7,
+  july: 7,
+  aug: 8,
+  august: 8,
+  sep: 9,
+  sept: 9,
+  september: 9,
+  oct: 10,
+  october: 10,
+  nov: 11,
+  november: 11,
+  dec: 12,
+  december: 12,
 };
 
 const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -30,7 +42,7 @@ export function parseBirthday(raw) {
   if (!raw) return null;
   // Strip slash-command prefix, the literal word "set", and common labels.
   // Note: NO word-boundary on "set" because users write things like "03/14set".
-  let text = raw
+  const text = raw
     .toLowerCase()
     .replace(/\/?set/g, ' ')
     .replace(/birthday|bday|b-day|dob|:|🎂|🎉/g, ' ')
@@ -40,7 +52,7 @@ export function parseBirthday(raw) {
 
   // 1) Numeric MM/DD or M-D or M.D (year optional, ignored). No word boundaries
   //    so things like "03/14set" → "03/14 " still match cleanly.
-  let m = text.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.]\d{2,4})?/);
+  let m = text.match(/(\d{1,2})[/\-.](\d{1,2})(?:[/\-.]\d{2,4})?/);
   if (m) {
     const mo = parseInt(m[1], 10);
     const da = parseInt(m[2], 10);

@@ -40,8 +40,16 @@ export async function inspectBotPermissions(guild, settings) {
   push('Manage Roles (guild-wide)', guildPerms.has(PermissionFlagsBits.ManageRoles));
 
   const channelChecks = [
-    ['Collection channel', settings?.collection_channel_id, ['ViewChannel', 'SendMessages', 'EmbedLinks']],
-    ['Announcement channel', settings?.announcement_channel_id, ['ViewChannel', 'SendMessages', 'EmbedLinks']],
+    [
+      'Collection channel',
+      settings?.collection_channel_id,
+      ['ViewChannel', 'SendMessages', 'EmbedLinks'],
+    ],
+    [
+      'Announcement channel',
+      settings?.announcement_channel_id,
+      ['ViewChannel', 'SendMessages', 'EmbedLinks'],
+    ],
     ['Audit channel', settings?.audit_channel_id, ['ViewChannel', 'SendMessages']],
     ['Alert channel', settings?.error_log_channel_id, ['ViewChannel', 'SendMessages']],
   ];
@@ -62,7 +70,11 @@ export async function inspectBotPermissions(guild, settings) {
       continue;
     }
     const missing = perms.filter((p) => !cp.has(PermissionFlagsBits[p]));
-    push(label, missing.length === 0, missing.length ? `missing: ${missing.join(', ')}` : `#${channel.name}`);
+    push(
+      label,
+      missing.length === 0,
+      missing.length ? `missing: ${missing.join(', ')}` : `#${channel.name}`
+    );
   }
 
   // Buttons & select menus are sent as part of message components; if SendMessages is
@@ -74,8 +86,9 @@ export async function inspectBotPermissions(guild, settings) {
   if (!settings?.birthday_role_id) {
     push('Assign birthday role', false, 'birthday_role not configured');
   } else {
-    const role = guild.roles.cache.get(settings.birthday_role_id)
-      ?? (await guild.roles.fetch(settings.birthday_role_id).catch(() => null));
+    const role =
+      guild.roles.cache.get(settings.birthday_role_id) ??
+      (await guild.roles.fetch(settings.birthday_role_id).catch(() => null));
     if (!role) {
       push('Assign birthday role', false, `role ${settings.birthday_role_id} not found`);
     } else if (!guildPerms.has(PermissionFlagsBits.ManageRoles)) {
