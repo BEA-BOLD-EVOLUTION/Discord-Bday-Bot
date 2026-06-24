@@ -7,11 +7,7 @@ import {
   claimAnnouncement,
 } from './db.js';
 import { isAdmin, inspectBotPermissions } from './utils/permissions.js';
-import {
-  runDailyJob,
-  getLastRunSummary,
-  getNextRunsByRegion,
-} from './scheduler.js';
+import { runDailyJob, getLastRunSummary, getNextRunsByRegion } from './scheduler.js';
 import { CID, buildDebugPanel, buildPanelMessage } from './ui.js';
 import { todayInTimezone, formatBirthday } from './utils/dates.js';
 import { formatZodiac, zodiacFor } from './utils/zodiac.js';
@@ -21,18 +17,33 @@ import { withLock } from './utils/locks.js';
 import { fetchMemberSafe } from './utils/membership.js';
 
 const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 // Embed accent color keyed to the zodiac element (mirrors scheduler.js).
 function elementColor(element) {
   switch (element) {
-    case 'Fire':  return 0xff5a3c;
-    case 'Earth': return 0x7a8f3d;
-    case 'Air':   return 0x8ec5ff;
-    case 'Water': return 0x5aa2e6;
-    default:      return 0xff7ab6;
+    case 'Fire':
+      return 0xff5a3c;
+    case 'Earth':
+      return 0x7a8f3d;
+    case 'Air':
+      return 0x8ec5ff;
+    case 'Water':
+      return 0x5aa2e6;
+    default:
+      return 0xff7ab6;
   }
 }
 
@@ -108,7 +119,10 @@ export async function handleDebugButton(interaction) {
   const lockKey = `debug:${interaction.guildId}:${action}`;
   const r = await withLock(lockKey, () => dispatchDebugAction(id, interaction));
   if (!r.acquired) {
-    const reply = { content: '⏳ That action is already running for this server. Try again in a moment.', ...EPHEMERAL };
+    const reply = {
+      content: '⏳ That action is already running for this server. Try again in a moment.',
+      ...EPHEMERAL,
+    };
     if (interaction.deferred || interaction.replied) return interaction.followUp(reply);
     return interaction.reply(reply);
   }
@@ -127,7 +141,9 @@ async function onCheckPermissions(interaction) {
   await interaction.deferReply(EPHEMERAL);
   const settings = await getGuildSettings(interaction.guildId);
   const checks = await inspectBotPermissions(interaction.guild, settings);
-  const lines = checks.map((c) => `${c.ok ? '✅' : '❌'} **${c.check}** — ${c.detail || (c.ok ? 'ok' : 'missing')}`);
+  const lines = checks.map(
+    (c) => `${c.ok ? '✅' : '❌'} **${c.check}** — ${c.detail || (c.ok ? 'ok' : 'missing')}`
+  );
   const allOk = checks.every((c) => c.ok);
   await interaction.editReply({
     content: `${allOk ? '✅ All permission checks passed.' : '⚠️ Some checks failed.'}\n\n${lines.join('\n')}`,
@@ -138,7 +154,9 @@ async function onTestAnnouncement(interaction) {
   await interaction.deferReply(EPHEMERAL);
   const settings = await getGuildSettings(interaction.guildId);
   if (!settings?.announcement_channel_id) {
-    return interaction.editReply('No announcement channel configured. Use `/birthday-setup` first.');
+    return interaction.editReply(
+      'No announcement channel configured. Use `/birthday-setup` first.'
+    );
   }
   try {
     await runDailyJob(interaction.client, {
@@ -149,12 +167,18 @@ async function onTestAnnouncement(interaction) {
       testUsername: interaction.user.username,
       notes: `test announcement triggered by ${interaction.user.tag}`,
     });
-    await reportToErrorChannel(interaction, `${interaction.user.tag} ran TEST announcement.`, 'info');
+    await reportToErrorChannel(
+      interaction,
+      `${interaction.user.tag} ran TEST announcement.`,
+      'info'
+    );
     return interaction.editReply('🎉 Test birthday announcement sent successfully.');
   } catch (err) {
     logger.error('Test announcement failed', { guild_id: interaction.guildId, error: err });
     await reportToErrorChannel(interaction, 'Test announcement failed', 'error', err);
-    return interaction.editReply('Test announcement failed. Check the error log channel for details.');
+    return interaction.editReply(
+      'Test announcement failed. Check the error log channel for details.'
+    );
   }
 }
 
@@ -166,15 +190,18 @@ async function onTestRole(interaction) {
   }
   const guild = interaction.guild;
   const me = guild.members.me;
-  const role = guild.roles.cache.get(settings.birthday_role_id)
-    ?? (await guild.roles.fetch(settings.birthday_role_id).catch(() => null));
+  const role =
+    guild.roles.cache.get(settings.birthday_role_id) ??
+    (await guild.roles.fetch(settings.birthday_role_id).catch(() => null));
 
   if (!role) return interaction.editReply('Configured birthday role no longer exists.');
   if (!me?.permissions.has(PermissionFlagsBits.ManageRoles)) {
     return interaction.editReply('Bot lacks `Manage Roles` permission.');
   }
   if (me.roles.highest.comparePositionTo(role) <= 0) {
-    return interaction.editReply(`Birthday role @${role.name} is at or above the bot's highest role.`);
+    return interaction.editReply(
+      `Birthday role @${role.name} is at or above the bot's highest role.`
+    );
   }
 
   const member = await guild.members.fetch(interaction.user.id).catch(() => null);
@@ -185,7 +212,11 @@ async function onTestRole(interaction) {
     setTimeout(() => {
       member.roles.remove(role, 'Birthday role test cleanup').catch(() => {});
     }, 5_000);
-    await reportToErrorChannel(interaction, `${interaction.user.tag} ran TEST role assignment (auto-cleared in 5s).`, 'info');
+    await reportToErrorChannel(
+      interaction,
+      `${interaction.user.tag} ran TEST role assignment (auto-cleared in 5s).`,
+      'info'
+    );
     return interaction.editReply(`✅ Assigned @${role.name} to you for 5 seconds, then cleared.`);
   } catch (err) {
     logger.error('Test role failed', { guild_id: interaction.guildId, error: err });
@@ -200,11 +231,11 @@ async function onCheckToday(interaction) {
   const all = await getBirthdaysFor(month, day);
   const here = all.filter((r) => r.guild_id === interaction.guildId);
   if (here.length === 0) {
-    return interaction.editReply(`No birthdays found for **${formatBirthday(month, day)}** (${isoDate}) in this server.`);
+    return interaction.editReply(
+      `No birthdays found for **${formatBirthday(month, day)}** (${isoDate}) in this server.`
+    );
   }
-  const lines = here.map(
-    (r) => `• <@${r.user_id}> — ${formatBirthday(r.month, r.day)}`
-  );
+  const lines = here.map((r) => `• <@${r.user_id}> — ${formatBirthday(r.month, r.day)}`);
   return interaction.editReply(
     `**Today's birthdays (${formatBirthday(month, day)} · ${isoDate}):**\n${lines.join('\n')}`
   );
@@ -218,7 +249,9 @@ async function onCatchUpMonth(interaction) {
   await interaction.deferReply(EPHEMERAL);
   const settings = await getGuildSettings(interaction.guildId);
   if (!settings?.announcement_channel_id) {
-    return interaction.editReply('No announcement channel configured. Use `/birthday-config` first.');
+    return interaction.editReply(
+      'No announcement channel configured. Use `/birthday-config` first.'
+    );
   }
 
   const { month, day: today, isoDate: todayIso } = todayInTimezone();
@@ -242,14 +275,12 @@ async function onCatchUpMonth(interaction) {
   // slot isn't consumed by a skipped row.
   const missed = [];
   let alreadyAnnounced = 0;
-  let nonMembers = 0;
   for (const row of candidates) {
     // Only a confirmed non-member is skipped; a transient fetch failure
     // leaves membership unknown and falls through to the claim so a real
     // member's belated birthday isn't silently dropped.
     const { gone } = await fetchMemberSafe(interaction.guild, row.user_id);
     if (gone) {
-      nonMembers++;
       logger.info('Skipping catch-up for non-member', {
         guild_id: interaction.guildId,
         user_id: row.user_id,
@@ -263,7 +294,11 @@ async function onCatchUpMonth(interaction) {
     try {
       claimed = await claimAnnouncement(interaction.guildId, row.user_id, isoForRow);
     } catch (err) {
-      logger.error('Catch-up claim failed', { guild_id: interaction.guildId, user_id: row.user_id, error: err });
+      logger.error('Catch-up claim failed', {
+        guild_id: interaction.guildId,
+        user_id: row.user_id,
+        error: err,
+      });
       continue;
     }
     if (claimed) missed.push(row);
@@ -284,9 +319,7 @@ async function onCatchUpMonth(interaction) {
   }
 
   const missedNamed = await resolveDisplayNames(interaction.guild, missed);
-  const lines = missedNamed.map(
-    (r) => `• <@${r.user_id}> — ${formatBirthday(r.month, r.day)}`
-  );
+  const lines = missedNamed.map((r) => `• <@${r.user_id}> — ${formatBirthday(r.month, r.day)}`);
   // All belated birthdays in this batch fall within the same calendar month,
   // so they typically share a zodiac sign. If the batch happens to straddle
   // a cusp (e.g. late May = Taurus + Gemini), list both signs in the header
@@ -311,7 +344,10 @@ async function onCatchUpMonth(interaction) {
       allowedMentions: { users: missedNamed.map((r) => r.user_id) },
     });
   } catch (err) {
-    logger.error('Catch-up announcement send failed', { guild_id: interaction.guildId, error: err });
+    logger.error('Catch-up announcement send failed', {
+      guild_id: interaction.guildId,
+      error: err,
+    });
     await reportToErrorChannel(interaction, 'Catch-up announcement failed', 'error', err);
     return interaction.editReply('Failed to post the catch-up message. See the error log channel.');
   }
@@ -406,7 +442,9 @@ async function onBelatedHoroscopes(interaction) {
 
   const settings = await getGuildSettings(interaction.guildId);
   if (!settings?.announcement_channel_id) {
-    return interaction.editReply('No announcement channel configured. Use `/birthday-config` first.');
+    return interaction.editReply(
+      'No announcement channel configured. Use `/birthday-config` first.'
+    );
   }
 
   const { month, day: today, isoDate: todayIso } = todayInTimezone();
@@ -449,7 +487,10 @@ async function onBelatedHoroscopes(interaction) {
       allowedMentions: { parse: [] },
     });
   } catch (err) {
-    logger.error('Belated horoscope header send failed', { guild_id: interaction.guildId, error: err });
+    logger.error('Belated horoscope header send failed', {
+      guild_id: interaction.guildId,
+      error: err,
+    });
     await reportToErrorChannel(interaction, 'Belated horoscope header failed', 'error', err);
     return interaction.editReply('Failed to post the horoscope header. See the error log channel.');
   }
@@ -463,10 +504,13 @@ async function onBelatedHoroscopes(interaction) {
         reason: 'OrbitDay belated horoscope thread (standalone)',
       })
       .catch((err) => {
-        logger.warn('Failed to create standalone belated horoscope thread; falling back to channel', {
-          guild_id: interaction.guildId,
-          error: err,
-        });
+        logger.warn(
+          'Failed to create standalone belated horoscope thread; falling back to channel',
+          {
+            guild_id: interaction.guildId,
+            error: err,
+          }
+        );
         return null;
       });
     if (thread) target = thread;
@@ -542,11 +586,17 @@ async function onRebuildPanel(interaction) {
   const channelId = settings?.collection_channel_id ?? interaction.channelId;
   const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
   if (!channel?.isTextBased?.()) {
-    return interaction.editReply('Could not resolve the collection channel. Configure one with `/birthday-setup`.');
+    return interaction.editReply(
+      'Could not resolve the collection channel. Configure one with `/birthday-setup`.'
+    );
   }
   try {
     await channel.send(buildPanelMessage());
-    await reportToErrorChannel(interaction, `${interaction.user.tag} rebuilt the birthday panel in <#${channel.id}>.`, 'info');
+    await reportToErrorChannel(
+      interaction,
+      `${interaction.user.tag} rebuilt the birthday panel in <#${channel.id}>.`,
+      'info'
+    );
     return interaction.editReply(`✅ Posted a fresh panel in <#${channel.id}>.`);
   } catch (err) {
     logger.error('Rebuild panel failed', { guild_id: interaction.guildId, error: err });
@@ -571,7 +621,9 @@ export async function reportToErrorChannel(interaction, action, level = 'error',
       `• Triggered by: <@${interaction.user.id}>`,
     ];
     if (err) {
-      lines.push(`• Error: \`${(err.name ?? 'Error')}: ${(err.message ?? String(err)).slice(0, 500)}\``);
+      lines.push(
+        `• Error: \`${err.name ?? 'Error'}: ${(err.message ?? String(err)).slice(0, 500)}\``
+      );
       lines.push(`• Retry recommended: ${shouldRetry(err) ? 'yes' : 'no'}`);
     }
     await channel.send({ content: lines.join('\n'), allowedMentions: { parse: [] } });

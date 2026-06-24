@@ -20,8 +20,7 @@ export async function registerCommands() {
 }
 
 // Run as a CLI script (`npm run register`), but stay importable from index.js.
-const invokedDirectly =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (invokedDirectly) {
   registerCommands().catch((err) => {
     logger.error('Command registration failed', { error: err });

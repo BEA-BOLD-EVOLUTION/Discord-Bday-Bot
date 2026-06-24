@@ -65,10 +65,14 @@ export const commandDefinitions = [
         .addChannelTypes(ChannelType.GuildText)
     )
     .addRoleOption((o) =>
-      o.setName('birthday_role').setDescription('Auto-assigned to members on their birthday, then removed the next day.')
+      o
+        .setName('birthday_role')
+        .setDescription('Auto-assigned to members on their birthday, then removed the next day.')
     )
     .addRoleOption((o) =>
-      o.setName('admin_role').setDescription('Extra role (besides Manage Server) allowed to run bot admin commands.')
+      o
+        .setName('admin_role')
+        .setDescription('Extra role (besides Manage Server) allowed to run bot admin commands.')
     )
     .addChannelOption((o) =>
       o
@@ -105,10 +109,17 @@ export const commandDefinitions = [
       return o;
     })
     .addIntegerOption((o) =>
-      o.setName('day').setDescription('Birth day (1–31)').setRequired(true).setMinValue(1).setMaxValue(31)
+      o
+        .setName('day')
+        .setDescription('Birth day (1–31)')
+        .setRequired(true)
+        .setMinValue(1)
+        .setMaxValue(31)
     )
     .addStringOption((o) => {
-      o.setName('region').setDescription('Announcement region (default: Americas)').setRequired(false);
+      o.setName('region')
+        .setDescription('Announcement region (default: Americas)')
+        .setRequired(false);
       for (const r of REGIONS) o.addChoices({ name: `${r.emoji} ${r.label}`, value: r.id });
       return o;
     })
@@ -120,11 +131,15 @@ export const commandDefinitions = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDMPermission(false)
     .addAttachmentOption((o) =>
-      o.setName('csv').setDescription('CSV columns: (discord_user_id|username), month, day, [region]').setRequired(true)
+      o
+        .setName('csv')
+        .setDescription('CSV columns: (discord_user_id|username), month, day, [region]')
+        .setRequired(true)
     )
     .addStringOption((o) => {
-      o.setName('default_region')
-        .setDescription('Region used when a row has no region column (default: americas).');
+      o.setName('default_region').setDescription(
+        'Region used when a row has no region column (default: americas).'
+      );
       for (const r of REGIONS) o.addChoices({ name: regionLabel(r.id), value: r.id });
       return o;
     })
@@ -219,10 +234,16 @@ export async function handleCommand(interaction) {
     if (name === 'birthday-export-calendar') return await cmdExportCalendar(interaction);
     if (name === 'birthday-calendar-feed') return await cmdCalendarFeed(interaction);
   } catch (err) {
-    logger.error('Command error', { command: name, guild_id: interaction.guildId, user_id: interaction.user?.id, error: err });
+    logger.error('Command error', {
+      command: name,
+      guild_id: interaction.guildId,
+      user_id: interaction.user?.id,
+      error: err,
+    });
     const msg = 'Something went wrong running that command.';
     try {
-      if (interaction.replied || interaction.deferred) await interaction.followUp({ content: msg, ...EPHEMERAL });
+      if (interaction.replied || interaction.deferred)
+        await interaction.followUp({ content: msg, ...EPHEMERAL });
       else await interaction.reply({ content: msg, ...EPHEMERAL });
     } catch {
       /* ignore */
@@ -340,7 +361,10 @@ async function cmdAddFor(interaction) {
   );
 
   return interaction.reply({
-    content: `🎂 Birthday added for <@${member.id}> — **${formatBirthday(month, day)}**${(() => { const z = formatZodiac(month, day); return z ? ` — ${z}` : ''; })()} — ${regionLabel(region)}`,
+    content: `🎂 Birthday added for <@${member.id}> — **${formatBirthday(month, day)}**${(() => {
+      const z = formatZodiac(month, day);
+      return z ? ` — ${z}` : '';
+    })()} — ${regionLabel(region)}`,
     ...EPHEMERAL,
   });
 }
@@ -482,7 +506,7 @@ async function cmdImport(interaction) {
   return interaction.editReply({ content: summary, files });
 }
 
-const CHANNEL_IMPORT_MAX_PAGES = 50;       // 50 * 100 = 5000 messages
+const CHANNEL_IMPORT_MAX_PAGES = 50; // 50 * 100 = 5000 messages
 const CHANNEL_IMPORT_MAX_MESSAGES = 5000;
 
 async function cmdImportChannel(interaction) {
@@ -514,7 +538,10 @@ async function cmdImportChannel(interaction) {
 
   const me = interaction.guild.members.me;
   const perms = channel.permissionsFor(me);
-  if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.ReadMessageHistory)) {
+  if (
+    !perms?.has(PermissionFlagsBits.ViewChannel) ||
+    !perms?.has(PermissionFlagsBits.ReadMessageHistory)
+  ) {
     return interaction.editReply(
       `I need **View Channel** and **Read Message History** in <#${channel.id}> to import from it.`
     );
@@ -542,7 +569,10 @@ async function cmdImportChannel(interaction) {
       pages += 1;
       before = batch.last()?.id;
       if (batch.size < 100) break;
-      if (messages.length >= CHANNEL_IMPORT_MAX_MESSAGES) { truncated = true; break; }
+      if (messages.length >= CHANNEL_IMPORT_MAX_MESSAGES) {
+        truncated = true;
+        break;
+      }
     }
     if (pages >= CHANNEL_IMPORT_MAX_PAGES) truncated = true;
   } catch (err) {
@@ -578,7 +608,10 @@ async function cmdImportChannel(interaction) {
       .slice()
       .sort((a, b) => a.month - b.month || a.day - b.day)
       .slice(0, 15)
-      .map((r) => `• ${String(r.month).padStart(2, '0')}/${String(r.day).padStart(2, '0')} — ${r.username ?? r.user_id}`)
+      .map(
+        (r) =>
+          `• ${String(r.month).padStart(2, '0')}/${String(r.day).padStart(2, '0')} — ${r.username ?? r.user_id}`
+      )
       .join('\n');
     const summary = [
       '**Channel Import — Dry Run**',
@@ -587,7 +620,9 @@ async function cmdImportChannel(interaction) {
       `Unparsed messages: ${unparsed.length}`,
       `Region: ${regionLabel(region)}`,
       sample ? `\nSample:\n${sample}` : '',
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
     return interaction.editReply({ content: summary, files });
   }
 
@@ -808,7 +843,10 @@ async function resolveMemberByUsername(guild, username) {
 
 // Minimal CSV parser supporting headers and quoted fields.
 function parseCsv(text) {
-  const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.trim().length > 0);
+  const lines = text
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((l) => l.trim().length > 0);
   if (lines.length === 0) return { rows: [], invalid: [] };
 
   const header = splitCsvLine(lines[0]).map((s) => s.trim().toLowerCase());
@@ -816,7 +854,10 @@ function parseCsv(text) {
   const hasUserId = header.includes('discord_user_id');
   const hasUsername = header.includes('username');
   if (!hasUserId && !hasUsername) {
-    return { rows: [], invalid: [{ row: { _line: 0 }, reason: 'missing discord_user_id or username column' }] };
+    return {
+      rows: [],
+      invalid: [{ row: { _line: 0 }, reason: 'missing discord_user_id or username column' }],
+    };
   }
   for (const req of required) {
     if (!header.includes(req)) {

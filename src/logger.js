@@ -74,7 +74,11 @@ function emit(level, message, fields = {}) {
   if (level === 'error' || level === 'warn') {
     pushErrorRecord(record);
     if (notifier) {
-      try { notifier(record); } catch { /* never throw from logger */ }
+      try {
+        notifier(record);
+      } catch {
+        /* never throw from logger */
+      }
     }
   }
 

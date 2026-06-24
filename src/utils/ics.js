@@ -77,7 +77,7 @@ function formatDateTimeUtc(d) {
  * @param {object} args
  * @param {string} [args.calendarName] Display name (X-WR-CALNAME).
  * @param {string} [args.prodId] PRODID identifier.
- * @param {Array<{guild_id?:string,user_id?:string,username?:string,displayName?:string,month:number,day:number,region?:string,uid?:string}>} args.birthdays
+ * @param {Array<{guild_id?:string,user_id?:string,username?:string,displayName?:string,month:number,day:number,region?:string,uid?:string}>} [args.birthdays]
  * @returns {string} CRLF-delimited .ics text.
  */
 export function buildBirthdayIcs({

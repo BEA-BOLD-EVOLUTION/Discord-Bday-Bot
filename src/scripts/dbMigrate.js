@@ -38,17 +38,15 @@ function buildUrl() {
 const url = buildUrl();
 if (!url) {
   console.error('Missing SUPABASE_DB_URL (or SUPABASE_DB_HOST/USER/PASSWORD).');
-  console.error('Add it to .env. Find it in Supabase dashboard \u2192 Project Settings \u2192 Database \u2192 Connection string.');
+  console.error(
+    'Add it to .env. Find it in Supabase dashboard \u2192 Project Settings \u2192 Database \u2192 Connection string.'
+  );
   process.exit(1);
 }
 
 console.log(`Applying ${path.relative(process.cwd(), schemaPath)} to Supabase...`);
 
-const child = spawn(
-  'psql',
-  [url, '-v', 'ON_ERROR_STOP=1', '-f', schemaPath],
-  { stdio: 'inherit' }
-);
+const child = spawn('psql', [url, '-v', 'ON_ERROR_STOP=1', '-f', schemaPath], { stdio: 'inherit' });
 
 child.on('error', (err) => {
   if (err.code === 'ENOENT') {

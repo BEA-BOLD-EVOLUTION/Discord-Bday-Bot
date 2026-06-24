@@ -8,20 +8,18 @@ export const supabase = createClient(config.supabase.url, config.supabase.servic
 // ---------- birthdays ----------
 
 export async function upsertBirthday({ guildId, userId, username, month, day, isPublic, region }) {
-  const { error } = await supabase
-    .from('birthdays')
-    .upsert(
-      {
-        guild_id: guildId,
-        user_id: userId,
-        username: username ?? null,
-        month,
-        day,
-        birthday_public: isPublic ?? true,
-        region: region ?? 'americas',
-      },
-      { onConflict: 'guild_id,user_id' }
-    );
+  const { error } = await supabase.from('birthdays').upsert(
+    {
+      guild_id: guildId,
+      user_id: userId,
+      username: username ?? null,
+      month,
+      day,
+      birthday_public: isPublic ?? true,
+      region: region ?? 'americas',
+    },
+    { onConflict: 'guild_id,user_id' }
+  );
   if (error) throw error;
 }
 
@@ -116,7 +114,9 @@ export async function bulkInsertBirthdays(rows, { overwrite = false } = {}) {
         continue;
       }
     }
-    const { error } = await supabase.from('birthdays').upsert(row, { onConflict: 'guild_id,user_id' });
+    const { error } = await supabase
+      .from('birthdays')
+      .upsert(row, { onConflict: 'guild_id,user_id' });
     if (error) throw error;
     inserted++;
   }
@@ -138,19 +138,25 @@ export async function getGuildSettings(guildId) {
 export async function updateGuildSettings(guildId, patch) {
   const { error } = await supabase
     .from('guild_settings')
-    .upsert({ guild_id: guildId, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'guild_id' });
+    .upsert(
+      { guild_id: guildId, ...patch, updated_at: new Date().toISOString() },
+      { onConflict: 'guild_id' }
+    );
   if (error) throw error;
 }
 
 // ---------- active birthday roles ----------
 
 export async function recordActiveBirthdayRole(guildId, userId, roleId) {
-  const { error } = await supabase
-    .from('active_birthday_roles')
-    .upsert(
-      { guild_id: guildId, user_id: userId, role_id: roleId, assigned_on: new Date().toISOString().slice(0, 10) },
-      { onConflict: 'guild_id,user_id' }
-    );
+  const { error } = await supabase.from('active_birthday_roles').upsert(
+    {
+      guild_id: guildId,
+      user_id: userId,
+      role_id: roleId,
+      assigned_on: new Date().toISOString().slice(0, 10),
+    },
+    { onConflict: 'guild_id,user_id' }
+  );
   if (error) throw error;
 }
 
@@ -178,7 +184,10 @@ export async function clearActiveBirthdayRole(guildId, userId) {
 export async function recordHoroscopeThread(guildId, channelId, threadId) {
   const { error } = await supabase
     .from('horoscope_threads')
-    .upsert({ guild_id: guildId, channel_id: channelId, thread_id: threadId }, { onConflict: 'thread_id' });
+    .upsert(
+      { guild_id: guildId, channel_id: channelId, thread_id: threadId },
+      { onConflict: 'thread_id' }
+    );
   if (error) throw error;
 }
 
@@ -194,10 +203,7 @@ export async function getHoroscopeThreadsOlderThan(cutoffIso) {
 }
 
 export async function deleteHoroscopeThread(threadId) {
-  const { error } = await supabase
-    .from('horoscope_threads')
-    .delete()
-    .eq('thread_id', threadId);
+  const { error } = await supabase.from('horoscope_threads').delete().eq('thread_id', threadId);
   if (error) throw error;
 }
 
@@ -309,7 +315,13 @@ export async function setDebugMode(guildId, enabled) {
 // Lightweight DB ping used by the startup health check. Returns true if the
 // required tables are reachable; false otherwise.
 export async function pingDatabase() {
-  const required = ['birthdays', 'guild_settings', 'active_birthday_roles', 'birthday_announcements', 'scheduler_runs'];
+  const required = [
+    'birthdays',
+    'guild_settings',
+    'active_birthday_roles',
+    'birthday_announcements',
+    'scheduler_runs',
+  ];
   const results = {};
   for (const t of required) {
     const { error } = await supabase.from(t).select('*', { count: 'exact', head: true });

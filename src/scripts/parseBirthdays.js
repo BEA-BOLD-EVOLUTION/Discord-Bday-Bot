@@ -16,8 +16,8 @@ import { aggregateBirthdayMessages } from '../utils/parseBirthdays.js';
 
 const args = process.argv.slice(2);
 const guildId = args.find((a) => /^\d{5,}$/.test(a));
-const file = (args.find((a) => a.startsWith('--file='))?.split('=')[1]) || 'birthdays.jsonl';
-const region = (args.find((a) => a.startsWith('--region='))?.split('=')[1]) || 'americas';
+const file = args.find((a) => a.startsWith('--file='))?.split('=')[1] || 'birthdays.jsonl';
+const region = args.find((a) => a.startsWith('--region='))?.split('=')[1] || 'americas';
 const commit = args.includes('--commit');
 const overwrite = args.includes('--overwrite');
 const excludeIds = new Set(
@@ -28,7 +28,9 @@ const excludeIds = new Set(
 );
 
 if (!guildId) {
-  console.error('Usage: node src/scripts/parseBirthdays.js <guildId> [--file=birthdays.jsonl] [--commit] [--overwrite] [--region=americas]');
+  console.error(
+    'Usage: node src/scripts/parseBirthdays.js <guildId> [--file=birthdays.jsonl] [--commit] [--overwrite] [--region=americas]'
+  );
   process.exit(1);
 }
 
@@ -42,7 +44,11 @@ async function main() {
   const rl = readline.createInterface({ input: fs.createReadStream(file) });
   for await (const line of rl) {
     if (!line.trim()) continue;
-    try { messages.push(JSON.parse(line)); } catch { /* ignore */ }
+    try {
+      messages.push(JSON.parse(line));
+    } catch {
+      /* ignore */
+    }
   }
 
   const { rows: parsedRows, unparsed, total } = aggregateBirthdayMessages(messages, { excludeIds });
@@ -59,10 +65,16 @@ async function main() {
   console.log(`\n=== Parsed ${rows.length} unique users from ${total} messages ===\n`);
   rows
     .sort((a, b) => a.month - b.month || a.day - b.day)
-    .forEach((r) => console.log(`${String(r.month).padStart(2,'0')}/${String(r.day).padStart(2,'0')}  ${(r.username ?? '').padEnd(25)}  ${r.user_id}`));
+    .forEach((r) =>
+      console.log(
+        `${String(r.month).padStart(2, '0')}/${String(r.day).padStart(2, '0')}  ${(r.username ?? '').padEnd(25)}  ${r.user_id}`
+      )
+    );
 
   if (unparsed.length) {
-    console.log(`\n=== ${unparsed.length} messages could not be parsed (likely conversational) ===`);
+    console.log(
+      `\n=== ${unparsed.length} messages could not be parsed (likely conversational) ===`
+    );
     unparsed.slice(0, 30).forEach((u) => console.log(`  [${u.author}] ${u.content.slice(0, 80)}`));
     if (unparsed.length > 30) console.log(`  ...and ${unparsed.length - 30} more`);
   }
@@ -77,4 +89,7 @@ async function main() {
   console.log(`Done. inserted=${result.inserted} skipped=${result.skipped}`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

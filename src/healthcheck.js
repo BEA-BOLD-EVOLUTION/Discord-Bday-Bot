@@ -19,7 +19,10 @@ export async function runStartupHealthCheck(client) {
       if (client.guilds.cache.size > 0) break;
     }
   }
-  logger.info('startup_health_check_begin', { user: client.user?.tag, guilds: client.guilds.cache.size });
+  logger.info('startup_health_check_begin', {
+    user: client.user?.tag,
+    guilds: client.guilds.cache.size,
+  });
 
   // ---- Discord login ----
   if (!client.user) {
@@ -53,7 +56,9 @@ export async function runStartupHealthCheck(client) {
   // ---- Scheduler ----
   try {
     const nextByRegion = getNextRunsByRegion();
-    const broken = Object.entries(nextByRegion).filter(([, v]) => !v).map(([k]) => k);
+    const broken = Object.entries(nextByRegion)
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
     if (broken.length) {
       logger.error('Regional scheduler cron(s) invalid', { broken });
     } else {
@@ -100,7 +105,12 @@ export async function runStartupHealthCheck(client) {
         continue;
       }
       const checks = await inspectBotPermissions(guild, settings);
-      const failed = checks.filter((c) => !c.ok);
+      // Only non-optional failures are real health problems worth a warning and
+      // an alert. Optional ones (audit/alert channel not set up, birthday role
+      // unassignable) are surfaced in the admin debug panel and, at debug level,
+      // here — but never raise alerts across every guild on each restart.
+      const failed = checks.filter((c) => !c.ok && !c.optional);
+      const optionalFailed = checks.filter((c) => !c.ok && c.optional);
       if (failed.length) {
         logger.warn('guild_health_issues', {
           guild_id: guildId,
@@ -110,6 +120,13 @@ export async function runStartupHealthCheck(client) {
         await reportToErrorChannel(guild, settings, failed);
       } else {
         logger.info('guild_health_ok', { guild_id: guildId, name: guild.name });
+      }
+      if (optionalFailed.length) {
+        logger.debug('guild_health_optional_notes', {
+          guild_id: guildId,
+          name: guild.name,
+          notes: optionalFailed.map((f) => `${f.check}: ${f.detail}`),
+        });
       }
     } catch (err) {
       logger.error('Guild health check failed', { guild_id: guildId, error: err });

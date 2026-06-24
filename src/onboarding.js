@@ -57,7 +57,12 @@ async function ensureBotCanPost(channel, required = REQUIRED_BOT_CHANNEL_PERMS) 
       bot_effective_perms_bitfield: current?.bitfield?.toString(),
       bot_role_perms_bitfield: me.permissions?.bitfield?.toString(),
     });
-    return { ok: false, reason: canManage ? 'cant_grant_unheld' : 'no_manage_roles', missing, channel };
+    return {
+      ok: false,
+      reason: canManage ? 'cant_grant_unheld' : 'no_manage_roles',
+      missing,
+      channel,
+    };
   }
   try {
     await channel.permissionOverwrites.edit(
@@ -82,18 +87,34 @@ async function ensureBotCanPost(channel, required = REQUIRED_BOT_CHANNEL_PERMS) 
   }
 }
 
+// Keys are stringified because PermissionFlagsBits values are BigInts, which
+// can't be used as computed object-literal keys under tsc --checkJs (they get
+// coerced to strings at runtime anyway).
 const PERM_LABELS = {
-  [PermissionFlagsBits.ViewChannel]: 'View Channel',
-  [PermissionFlagsBits.SendMessages]: 'Send Messages',
-  [PermissionFlagsBits.EmbedLinks]: 'Embed Links',
-  [PermissionFlagsBits.ReadMessageHistory]: 'Read Message History',
-  [PermissionFlagsBits.CreatePublicThreads]: 'Create Public Threads',
-  [PermissionFlagsBits.SendMessagesInThreads]: 'Send Messages in Threads',
-  [PermissionFlagsBits.ManageChannels]: 'Manage Channels',
+  [String(PermissionFlagsBits.ViewChannel)]: 'View Channel',
+  [String(PermissionFlagsBits.SendMessages)]: 'Send Messages',
+  [String(PermissionFlagsBits.EmbedLinks)]: 'Embed Links',
+  [String(PermissionFlagsBits.ReadMessageHistory)]: 'Read Message History',
+  [String(PermissionFlagsBits.CreatePublicThreads)]: 'Create Public Threads',
+  [String(PermissionFlagsBits.SendMessagesInThreads)]: 'Send Messages in Threads',
+  [String(PermissionFlagsBits.ManageChannels)]: 'Manage Channels',
 };
 function permLabel(p) {
-  return PERM_LABELS[p] || String(p);
+  return PERM_LABELS[String(p)] || String(p);
 }
+
+// Human-readable explanation for each reason code ensureBotCanPost /
+// ensureBotPermsOnConfiguredChannels can produce. Keep the keys in sync with
+// those functions — a missing key falls back to a generic message below.
+const PERM_REASON_TEXT = {
+  no_member: "I couldn't resolve my own membership in this server",
+  no_view:
+    "I can't see this channel at all — a category or channel override is denying me View Channel",
+  no_manage_roles:
+    "I don't have Manage Permissions on this channel, so I can't fix the override myself",
+  cant_grant_unheld:
+    "A channel or category override is denying me these permissions, and Discord won't let me grant myself a permission I don't already hold",
+};
 
 // In-process cache so we DM the owner at most once per process per guild.
 const ownerNotified = new Set();
@@ -107,19 +128,20 @@ async function notifyOwnerOfPermIssues(guild, problems) {
       const chRef = p.channel?.id ? `<#${p.channel.id}>` : '(missing channel)';
       const missing = (p.missing || []).map(permLabel).join(', ') || 'view access';
       const why =
-        p.reason === 'no_view'
-          ? "I can't even see this channel"
-          : p.reason === 'no_manage'
-            ? "I lack Manage Channel here (a category or channel override is blocking me)"
-            : `Discord rejected my edit (code ${p.code ?? '?'})`;
+        PERM_REASON_TEXT[p.reason] ??
+        `Discord rejected my edit${p.code ? ` (code ${p.code})` : ''}`;
       return `• **${p.slot}** → ${chRef}\n   missing: ${missing}\n   reason: ${why}`;
     });
     const msg =
       `Hi! I'm **OrbitDay** running in **${guild.name}**. I tried to fix my own channel permissions but couldn't:\n\n` +
       lines.join('\n\n') +
-      `\n\n**Fix:** open each channel → *Edit Channel* → *Permissions* → add my bot role and tick **View Channel**, **Send Messages**, **Embed Links**, **Read Message History** (plus **Create Public Threads** + **Send Messages in Threads** for the collection/announcement channels). Or simply give my role **Manage Channels** at the server level with no channel-level deny overrides.\n\nOnce that's done, I'll auto-heal everything else on my next restart.`;
+      `\n\n**Fix:** open each channel → *Edit Channel* → *Permissions* → add my bot role and tick **View Channel**, **Send Messages**, **Embed Links**, **Read Message History** (plus **Create Public Threads** + **Send Messages in Threads** for the collection/announcement channels). Or simply give my role **Administrator**, which bypasses channel overrides entirely.\n\nOnce that's done, I'll auto-heal everything else on my next restart.`;
     await owner.send(msg).catch(() => null);
-    logger.info('owner_perm_dm_sent', { guild_id: guild.id, owner_id: owner.id, problems: problems.length });
+    logger.info('owner_perm_dm_sent', {
+      guild_id: guild.id,
+      owner_id: owner.id,
+      problems: problems.length,
+    });
   } catch (err) {
     logger.warn('owner_perm_dm_failed', { guild_id: guild.id, error: err?.message });
   }
@@ -165,7 +187,10 @@ export async function ensureBotPermsOnConfiguredChannels(guild) {
       await notifyOwnerOfPermIssues(guild, problems);
     }
   } catch (err) {
-    logger.warn('ensureBotPermsOnConfiguredChannels failed', { guild_id: guild.id, error: err?.message });
+    logger.warn('ensureBotPermsOnConfiguredChannels failed', {
+      guild_id: guild.id,
+      error: err?.message,
+    });
   }
 }
 
@@ -209,8 +234,9 @@ async function _ensureBirthdayClubChannel(guild) {
 
     // 1. Already configured & channel still exists?
     if (settings?.collection_channel_id) {
-      const existing = guild.channels.cache.get(settings.collection_channel_id)
-        ?? (await guild.channels.fetch(settings.collection_channel_id).catch(() => null));
+      const existing =
+        guild.channels.cache.get(settings.collection_channel_id) ??
+        (await guild.channels.fetch(settings.collection_channel_id).catch(() => null));
       if (existing) {
         logger.info('birthday_club_channel_present', {
           guild_id: guild.id,
@@ -385,8 +411,7 @@ export async function promoteSetupPendingToPanel(guild) {
 
     const pending = recent.find(
       (m) =>
-        m.author?.id === selfId &&
-        m.embeds?.some((e) => e?.footer?.text === SETUP_PENDING_MARKER)
+        m.author?.id === selfId && m.embeds?.some((e) => e?.footer?.text === SETUP_PENDING_MARKER)
     );
     if (pending) {
       await pending.delete().catch((err) =>
@@ -412,6 +437,25 @@ export async function promoteSetupPendingToPanel(guild) {
 // existing role by id (if still present) or by name; otherwise creates a new
 // one and persists its id. Requires ManageRoles on the bot; logs and bails if
 // missing so admins can set one manually via /birthday-config.
+// Hoist the Birthday role so members carrying it show up in their own group in
+// the member-list sidebar — without this it's nearly invisible. Best-effort:
+// editing a role needs ManageRoles and the role to sit below the bot's highest
+// role, so failures are logged at debug and otherwise ignored. Runs for every
+// guild via the startup back-fill, so existing roles get hoisted too.
+async function ensureRoleHoisted(role) {
+  if (!role || role.hoist) return;
+  try {
+    await role.edit({ hoist: true }, 'Birthday Bot: show Birthday role in the member list');
+    logger.info('birthday_role_hoisted', { guild_id: role.guild.id, role_id: role.id });
+  } catch (err) {
+    logger.debug('Could not hoist Birthday role; skipping', {
+      guild_id: role.guild?.id,
+      role_id: role.id,
+      error: err,
+    });
+  }
+}
+
 const roleInflight = new Map();
 export async function ensureBirthdayRole(guild) {
   const prior = roleInflight.get(guild.id);
@@ -432,23 +476,28 @@ async function _ensureBirthdayRole(guild) {
         (await guild.roles.fetch(settings.birthday_role_id).catch(() => null));
       if (existing) {
         logger.info('birthday_role_present', { guild_id: guild.id, role_id: existing.id });
+        await ensureRoleHoisted(existing);
         return existing;
       }
       // configured role is gone — fall through and re-provision
     }
 
     // 2. Reuse an existing role by name (case-insensitive, ignoring emoji).
-    const normalize = (s) => String(s ?? '').toLowerCase().replace(/[^a-z]+/g, '');
+    const normalize = (s) =>
+      String(s ?? '')
+        .toLowerCase()
+        .replace(/[^a-z]+/g, '');
     const wanted = normalize(DEFAULT_BIRTHDAY_ROLE_NAME);
     const allRoles = await guild.roles.fetch().catch(() => null);
-    let role =
-      allRoles?.find((r) => normalize(r.name) === wanted) ?? null;
+    let role = allRoles?.find((r) => normalize(r.name) === wanted) ?? null;
 
     // 3. Otherwise create one.
     if (!role) {
       const me = guild.members.me;
       if (!me?.permissions.has(PermissionFlagsBits.ManageRoles)) {
-        logger.error('Cannot auto-create Birthday role: missing Manage Roles', {
+        // The birthday role is optional; not having perms to create it isn't an
+        // error worth alerting on. Skip quietly.
+        logger.debug('Skipping Birthday role auto-create: missing Manage Roles', {
           guild_id: guild.id,
         });
         return null;
@@ -456,22 +505,26 @@ async function _ensureBirthdayRole(guild) {
       try {
         role = await guild.roles.create({
           name: DEFAULT_BIRTHDAY_ROLE_NAME,
-          color: DEFAULT_BIRTHDAY_ROLE_COLOR,
+          colors: { primaryColor: DEFAULT_BIRTHDAY_ROLE_COLOR },
           mentionable: true,
-          hoist: false,
+          hoist: true,
           reason: 'Birthday Bot onboarding: created Birthday role',
         });
         logger.info('birthday_role_created', { guild_id: guild.id, role_id: role.id });
       } catch (err) {
-        logger.error('Failed to create Birthday role', { guild_id: guild.id, error: err });
+        logger.debug('Failed to create Birthday role; skipping', {
+          guild_id: guild.id,
+          error: err,
+        });
         return null;
       }
     }
 
+    await ensureRoleHoisted(role);
     await updateGuildSettings(guild.id, { birthday_role_id: role.id });
     return role;
   } catch (err) {
-    logger.error('ensureBirthdayRole failed', { guild_id: guild.id, error: err });
+    logger.debug('ensureBirthdayRole failed; skipping', { guild_id: guild.id, error: err });
     return null;
   }
 }

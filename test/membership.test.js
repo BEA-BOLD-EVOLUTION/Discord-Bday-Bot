@@ -11,16 +11,14 @@ function makeGuild(fetchImpl) {
 
 // A DiscordAPIError-like object carries a numeric `code`.
 function apiError(code, message = 'api error') {
-  const err = new Error(message);
-  err.code = code;
-  return err;
+  return Object.assign(new Error(message), { code });
 }
 
 test('resolves a present member', async () => {
   const member = { id: 'user-1' };
   const { member: got, gone } = await fetchMemberSafe(
     makeGuild(async () => member),
-    'user-1',
+    'user-1'
   );
   assert.equal(got, member);
   assert.equal(gone, false);
@@ -28,8 +26,10 @@ test('resolves a present member', async () => {
 
 test('treats Unknown Member (10007) as a confirmed non-member', async () => {
   const { member, gone } = await fetchMemberSafe(
-    makeGuild(async () => { throw apiError(UNKNOWN_MEMBER); }),
-    'user-2',
+    makeGuild(async () => {
+      throw apiError(UNKNOWN_MEMBER);
+    }),
+    'user-2'
   );
   assert.equal(member, null);
   assert.equal(gone, true);
@@ -37,8 +37,10 @@ test('treats Unknown Member (10007) as a confirmed non-member', async () => {
 
 test('treats a rate-limit / 5xx as transient (membership unknown)', async () => {
   const { member, gone } = await fetchMemberSafe(
-    makeGuild(async () => { throw apiError(50001, 'Missing Access'); }),
-    'user-3',
+    makeGuild(async () => {
+      throw apiError(50001, 'Missing Access');
+    }),
+    'user-3'
   );
   assert.equal(member, null);
   assert.equal(gone, false);
@@ -46,8 +48,10 @@ test('treats a rate-limit / 5xx as transient (membership unknown)', async () => 
 
 test('treats a network error with no code as transient', async () => {
   const { member, gone } = await fetchMemberSafe(
-    makeGuild(async () => { throw new Error('ECONNRESET'); }),
-    'user-4',
+    makeGuild(async () => {
+      throw new Error('ECONNRESET');
+    }),
+    'user-4'
   );
   assert.equal(member, null);
   assert.equal(gone, false);
