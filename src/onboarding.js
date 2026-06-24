@@ -505,7 +505,7 @@ async function _ensureBirthdayRole(guild) {
       try {
         role = await guild.roles.create({
           name: DEFAULT_BIRTHDAY_ROLE_NAME,
-          color: DEFAULT_BIRTHDAY_ROLE_COLOR,
+          colors: { primaryColor: DEFAULT_BIRTHDAY_ROLE_COLOR },
           mentionable: true,
           hoist: true,
           reason: 'Birthday Bot onboarding: created Birthday role',
