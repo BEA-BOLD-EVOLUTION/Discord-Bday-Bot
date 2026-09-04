@@ -20,6 +20,7 @@ import { isValidRegion, regionLabel, regionFromLocale } from './regions.js';
 import { logger } from './logger.js';
 import { handleDebugButton, reportToErrorChannel } from './debug.js';
 import { isAdmin } from './utils/permissions.js';
+import { ackReply, ackUpdate, interactionAgeMs, isUnknownInteraction } from './utils/ack.js';
 import { ensureBotPermsOnConfiguredChannels, promoteSetupPendingToPanel } from './onboarding.js';
 
 const EPHEMERAL = { flags: MessageFlags.Ephemeral };
@@ -47,6 +48,7 @@ export async function handleInteraction(interaction) {
       guild_id: interaction.guildId,
       user_id: interaction.user?.id,
       custom_id: interaction.customId,
+      age_ms: interactionAgeMs(interaction),
       error: err,
     });
     // Report technical detail to the admin error channel; show users a plain message.
@@ -58,6 +60,9 @@ export async function handleInteraction(interaction) {
         err
       ).catch(() => {});
     }
+    // A dead token can't carry an apology either — every send would fail the
+    // same way, so don't bother trying.
+    if (isUnknownInteraction(err)) return;
     const msg = 'Something went wrong. Please try again.';
     try {
       if (interaction.replied || interaction.deferred) {
@@ -90,12 +95,15 @@ async function handleButton(interaction) {
       return interaction.reply({ content: 'Slow down a moment, then try again.', ...EPHEMERAL });
     }
     removeCooldown.set(interaction.user.id, now);
+    // The button lives on the public panel, so this replies with its own
+    // ephemeral rather than editing the panel in place.
+    if (!(await ackReply(interaction))) return;
     const existing = await getBirthday(interaction.guildId, interaction.user.id);
     if (!existing) {
-      return interaction.reply({ content: 'You have no birthday saved.', ...EPHEMERAL });
+      return interaction.editReply({ content: 'You have no birthday saved.' });
     }
     await deleteBirthday(interaction.guildId, interaction.user.id);
-    return interaction.reply({ content: '🗑 Your birthday has been removed.', ...EPHEMERAL });
+    return interaction.editReply({ content: '🗑 Your birthday has been removed.' });
   }
 
   if (id === CID.cancel) {
@@ -107,16 +115,22 @@ async function handleButton(interaction) {
     const m = Number(parts[2]);
     const d = Number(parts[3]);
     const region = parts[4];
+    // Acknowledge before touching Supabase — the write is the slow step and a
+    // cold connection can outlast the 3s token window, which used to save the
+    // birthday and then tell the user it had failed.
+    if (!(await ackUpdate(interaction))) return;
     if (!isValidDate(m, d)) {
-      return interaction.reply({
+      return interaction.editReply({
         content: 'That date is invalid. Please start over.',
-        ...EPHEMERAL,
+        embeds: [],
+        components: [],
       });
     }
     if (!isValidRegion(region)) {
-      return interaction.reply({
+      return interaction.editReply({
         content: 'That region is invalid. Please start over.',
-        ...EPHEMERAL,
+        embeds: [],
+        components: [],
       });
     }
     try {
@@ -146,12 +160,13 @@ async function handleButton(interaction) {
       reportToErrorChannel(interaction, 'Failed to save user birthday', 'error', err).catch(
         () => {}
       );
-      return interaction.reply({
+      return interaction.editReply({
         content: 'Something went wrong saving your birthday. Please try again.',
-        ...EPHEMERAL,
+        embeds: [],
+        components: [],
       });
     }
-    return interaction.update({
+    return interaction.editReply({
       content: `🎉 Saved! Your birthday is **${formatBirthday(m, d)}**${(() => {
         const z = formatZodiac(m, d);
         return z ? ` — ${z}` : '';
@@ -200,8 +215,15 @@ async function handleConfig(interaction) {
   if (!interaction.guildId) {
     return interaction.reply({ content: 'Server only.', ...EPHEMERAL });
   }
+  // Every branch below reads or writes guild_settings, and isAdmin() itself
+  // hits the database. Acknowledge before any of that so a slow round-trip
+  // can't expire the token mid-handler.
+  if (!(await ackUpdate(interaction))) return;
   if (!(await isAdmin(interaction))) {
-    return interaction.reply({ content: 'You do not have permission to do that.', ...EPHEMERAL });
+    return interaction.followUp({
+      content: 'You do not have permission to do that.',
+      ...EPHEMERAL,
+    });
   }
 
   const id = interaction.customId;
@@ -211,7 +233,7 @@ async function handleConfig(interaction) {
   const saveAndRefresh = async (patch) => {
     if (patch) await updateGuildSettings(guildId, patch);
     const settings = await getGuildSettings(guildId);
-    return interaction.update(buildConfigPanel(settings));
+    return interaction.editReply(buildConfigPanel(settings));
   };
 
   // Channel selects (main + advanced)
@@ -228,12 +250,12 @@ async function handleConfig(interaction) {
       // with the real birthday panel now.
       promoteSetupPendingToPanel(interaction.guild).catch(() => {});
       const settings = await getGuildSettings(guildId);
-      return interaction.update(buildConfigPanel(settings));
+      return interaction.editReply(buildConfigPanel(settings));
     }
     if (id === CID.cfg.chAudit) {
       await updateGuildSettings(guildId, { audit_channel_id: channelId });
       await ensureBotPermsOnConfiguredChannels(interaction.guild).catch(() => {});
-      return interaction.update({
+      return interaction.editReply({
         content: `✅ Audit channel set to <#${channelId}>.`,
         components: [],
         embeds: [],
@@ -242,7 +264,7 @@ async function handleConfig(interaction) {
     if (id === CID.cfg.chErrorLog) {
       await updateGuildSettings(guildId, { error_log_channel_id: channelId });
       await ensureBotPermsOnConfiguredChannels(interaction.guild).catch(() => {});
-      return interaction.update({
+      return interaction.editReply({
         content: `✅ Alert channel set to <#${channelId}>.`,
         components: [],
         embeds: [],
@@ -257,7 +279,7 @@ async function handleConfig(interaction) {
     if (id === CID.cfg.roleBirthday) return saveAndRefresh({ birthday_role_id: roleId });
     if (id === CID.cfg.roleAdmin) {
       await updateGuildSettings(guildId, { admin_role_id: roleId });
-      return interaction.update({
+      return interaction.editReply({
         content: `✅ Admin role set to <@&${roleId}>.`,
         components: [],
         embeds: [],
@@ -268,7 +290,7 @@ async function handleConfig(interaction) {
   // Advanced string select (opens a follow-up with the appropriate picker)
   if (interaction.isStringSelectMenu() && id === CID.cfg.advanced) {
     const target = interaction.values?.[0];
-    return interaction.reply({ ...buildAdvancedConfig(target), ...EPHEMERAL });
+    return interaction.followUp({ ...buildAdvancedConfig(target), ...EPHEMERAL });
   }
 
   // Toggle buttons + refresh
@@ -292,5 +314,5 @@ async function handleConfig(interaction) {
   }
 
   // Unknown cfg interaction — fall through silently.
-  return interaction.reply({ content: 'Unhandled config action.', ...EPHEMERAL });
+  return interaction.followUp({ content: 'Unhandled config action.', ...EPHEMERAL });
 }
