@@ -1,4 +1,4 @@
-import { EmbedBuilder, MessageFlags, PermissionFlagsBits } from 'discord.js';
+import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import {
   getGuildSettings,
   countBirthdaysForGuild,
@@ -7,6 +7,7 @@ import {
   claimAnnouncement,
 } from './db.js';
 import { isAdmin, inspectBotPermissions } from './utils/permissions.js';
+import { ackReply } from './utils/ack.js';
 import { runDailyJob, getLastRunSummary, getNextRunsByRegion } from './scheduler.js';
 import { CID, buildDebugPanel, buildPanelMessage } from './ui.js';
 import { todayInTimezone, formatBirthday } from './utils/dates.js';
@@ -46,8 +47,6 @@ function elementColor(element) {
       return 0xff7ab6;
   }
 }
-
-const EPHEMERAL = { flags: MessageFlags.Ephemeral };
 
 // Mirrors scheduler.js: prefer nickname > server displayName > global > username.
 function pickDisplayName(member, fallback) {
@@ -101,8 +100,12 @@ export async function buildDebugState(interaction) {
 }
 
 export async function handleDebugButton(interaction) {
+  // isAdmin() reads guild_settings and every action below does more DB work,
+  // so acknowledge up front: the 3s token window is far shorter than a cold
+  // Supabase round-trip. Sub-handlers edit this deferred reply.
+  if (!(await ackReply(interaction))) return;
   if (!(await isAdmin(interaction))) {
-    return interaction.reply({ content: 'You do not have permission to do that.', ...EPHEMERAL });
+    return interaction.editReply({ content: 'You do not have permission to do that.' });
   }
   const id = interaction.customId;
 
@@ -119,12 +122,9 @@ export async function handleDebugButton(interaction) {
   const lockKey = `debug:${interaction.guildId}:${action}`;
   const r = await withLock(lockKey, () => dispatchDebugAction(id, interaction));
   if (!r.acquired) {
-    const reply = {
+    return interaction.editReply({
       content: '⏳ That action is already running for this server. Try again in a moment.',
-      ...EPHEMERAL,
-    };
-    if (interaction.deferred || interaction.replied) return interaction.followUp(reply);
-    return interaction.reply(reply);
+    });
   }
   return r.result;
 }
@@ -138,7 +138,6 @@ async function dispatchDebugAction(id, interaction) {
 }
 
 async function onCheckPermissions(interaction) {
-  await interaction.deferReply(EPHEMERAL);
   const settings = await getGuildSettings(interaction.guildId);
   const checks = await inspectBotPermissions(interaction.guild, settings);
   const lines = checks.map(
@@ -151,7 +150,6 @@ async function onCheckPermissions(interaction) {
 }
 
 async function onTestAnnouncement(interaction) {
-  await interaction.deferReply(EPHEMERAL);
   const settings = await getGuildSettings(interaction.guildId);
   if (!settings?.announcement_channel_id) {
     return interaction.editReply(
@@ -183,7 +181,6 @@ async function onTestAnnouncement(interaction) {
 }
 
 async function onTestRole(interaction) {
-  await interaction.deferReply(EPHEMERAL);
   const settings = await getGuildSettings(interaction.guildId);
   if (!settings?.birthday_role_id) {
     return interaction.editReply('No birthday role configured. Use `/birthday-setup` first.');
@@ -226,7 +223,6 @@ async function onTestRole(interaction) {
 }
 
 async function onCheckToday(interaction) {
-  await interaction.deferReply(EPHEMERAL);
   const { month, day, isoDate } = todayInTimezone();
   const all = await getBirthdaysFor(month, day);
   const here = all.filter((r) => r.guild_id === interaction.guildId);
@@ -246,7 +242,6 @@ async function onCheckToday(interaction) {
 // each entry is claimed in `birthday_announcements` so re-clicking, or the
 // scheduler later catching up, won't double-post.
 async function onCatchUpMonth(interaction) {
-  await interaction.deferReply(EPHEMERAL);
   const settings = await getGuildSettings(interaction.guildId);
   if (!settings?.announcement_channel_id) {
     return interaction.editReply(
@@ -434,8 +429,6 @@ async function onCatchUpMonth(interaction) {
 // safe to run alongside or after onCatchUpMonth, e.g. to recover a
 // horoscope thread that failed to send.
 async function onBelatedHoroscopes(interaction) {
-  await interaction.deferReply(EPHEMERAL);
-
   if (!horoscopeEnabled()) {
     return interaction.editReply('Horoscopes are disabled (HOROSCOPE_ENABLED is not set).');
   }
@@ -561,7 +554,6 @@ async function onBelatedHoroscopes(interaction) {
 }
 
 async function onViewErrors(interaction) {
-  await interaction.deferReply(EPHEMERAL);
   const recent = getRecentErrors({ guildId: interaction.guildId, limit: 10 });
   if (recent.length === 0) return interaction.editReply('No recent errors. 🎉');
   const blob = recent
@@ -581,7 +573,6 @@ async function onViewErrors(interaction) {
 }
 
 async function onRebuildPanel(interaction) {
-  await interaction.deferReply(EPHEMERAL);
   const settings = await getGuildSettings(interaction.guildId);
   const channelId = settings?.collection_channel_id ?? interaction.channelId;
   const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
